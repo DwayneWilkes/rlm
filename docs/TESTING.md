@@ -10,7 +10,7 @@ pnpm test
 pnpm --filter @rlm/core test
 
 # Run a specific test file
-pnpm --filter @rlm/core test src/budget/budget-controller.test.ts
+pnpm --filter @rlm/core test src/budget/controller.test.ts
 
 # Run tests matching a pattern
 pnpm --filter @rlm/core test -t "budget"
@@ -30,13 +30,13 @@ pnpm --filter @rlm/core test --watch
 3. **REFACTOR**: Clean up while tests pass
 
 ```bash
-# 1. Write test first (packages/core/src/budget/budget-controller.test.ts)
+# 1. Write test first (packages/core/src/budget/controller.test.ts)
 # 2. Run test (should fail)
-pnpm --filter @rlm/core test src/budget/budget-controller.test.ts
+pnpm --filter @rlm/core test src/budget/controller.test.ts
 
 # 3. Implement feature
 # 4. Run test (should pass)
-pnpm --filter @rlm/core test src/budget/budget-controller.test.ts
+pnpm --filter @rlm/core test src/budget/controller.test.ts
 
 # 5. Run full suite before commit
 pnpm test
@@ -61,28 +61,43 @@ pnpm test
 ```
 packages/core/
 ├── src/
+│   ├── types.ts                         # Type definitions
+│   ├── types.test.ts                    # Unit test colocated
+│   ├── rlm.ts                           # Main RLM class
+│   ├── rlm.test.ts
+│   ├── index.ts                         # Public exports
+│   ├── index.test.ts
 │   ├── budget/
-│   │   ├── budget-controller.ts
-│   │   ├── budget-controller.test.ts    # Unit test colocated
-│   │   └── index.ts
+│   │   ├── controller.ts
+│   │   └── controller.test.ts           # Unit test colocated
+│   ├── context/
+│   │   ├── loader.ts
+│   │   └── loader.test.ts
 │   ├── llm/
 │   │   ├── router.ts
 │   │   ├── router.test.ts               # Unit test colocated
 │   │   └── adapters/
+│   │       ├── ollama.ts
+│   │       ├── ollama.test.ts
 │   │       ├── anthropic.ts
 │   │       ├── anthropic.test.ts
 │   │       ├── openai.ts
 │   │       └── openai.test.ts
+│   ├── repl/
+│   │   ├── sandbox.ts
+│   │   ├── sandbox.test.ts
+│   │   └── pyodide.ts
 │   └── engine/
+│       ├── parser.ts
+│       ├── parser.test.ts
 │       ├── executor.ts
 │       └── executor.test.ts
 ├── tests/
 │   ├── fixtures/                        # Shared test data
 │   │   ├── sample-context.md
 │   │   └── mock-responses.json
-│   ├── integration/                     # Cross-module tests
-│   │   └── executor-with-llm.test.ts
-│   └── setup.ts                         # Global test setup
+│   └── integration/                     # Cross-module tests
+│       └── rlm-integration.test.ts
 ```
 
 ### Why This Structure
@@ -112,13 +127,13 @@ Same as source files:
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { BudgetController } from './budget-controller.js';
+import { BudgetController } from './controller.js';
+import { DEFAULT_BUDGET } from '../types.js';
 
 describe('BudgetController', () => {
-  it('should allow requests within budget', () => {
-    const controller = new BudgetController({ maxTotalCost: 10 });
-    const result = controller.check({ estimatedCost: 5 });
-    expect(result.allowed).toBe(true);
+  it('should allow iteration within budget', () => {
+    const controller = new BudgetController(DEFAULT_BUDGET);
+    expect(controller.canProceed('iteration')).toBe(true);
   });
 });
 ```
@@ -320,7 +335,7 @@ if (process.platform === 'win32') {
 pnpm --filter @rlm/core test --reporter=verbose
 
 # Debug specific test
-pnpm --filter @rlm/core test --inspect-brk src/budget/budget-controller.test.ts
+pnpm --filter @rlm/core test --inspect-brk src/budget/controller.test.ts
 
 # Run failed tests only
 pnpm --filter @rlm/core test --failed

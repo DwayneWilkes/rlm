@@ -1,7 +1,7 @@
 # execution-engine Specification
 
 ## Purpose
-TBD - created by archiving change add-core-specs. Update Purpose after archive.
+Orchestrate the RLM execution loop: parse LLM responses, execute code blocks, handle recursive subcalls, and build execution traces.
 ## Requirements
 ### Requirement: Response Parsing
 

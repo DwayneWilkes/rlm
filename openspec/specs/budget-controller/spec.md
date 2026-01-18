@@ -1,7 +1,7 @@
 # budget-controller Specification
 
 ## Purpose
-TBD - created by archiving change add-core-specs. Update Purpose after archive.
+Enforce resource limits during RLM execution, tracking cost, tokens, time, recursion depth, and iterations with 80% threshold warnings.
 ## Requirements
 ### Requirement: Budget Limit Checking
 

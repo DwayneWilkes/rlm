@@ -1,7 +1,7 @@
 # repl-sandbox Specification
 
 ## Purpose
-TBD - created by archiving change add-core-specs. Update Purpose after archive.
+Provide a Pyodide-based Python REPL sandbox with LLM bridges (llm_query, rlm_query) and utility functions for context analysis.
 ## Requirements
 ### Requirement: Sandbox Lifecycle
 

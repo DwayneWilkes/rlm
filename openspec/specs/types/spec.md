@@ -1,7 +1,7 @@
 # types Specification
 
 ## Purpose
-TBD - created by archiving change add-core-specs. Update Purpose after archive.
+Define core TypeScript types for RLM configuration, execution, results, and LLM abstraction with sensible defaults.
 ## Requirements
 ### Requirement: Configuration Types
 

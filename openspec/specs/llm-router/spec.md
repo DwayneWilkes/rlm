@@ -1,7 +1,7 @@
 # llm-router Specification
 
 ## Purpose
-TBD - created by archiving change add-core-specs. Update Purpose after archive.
+Route LLM requests to provider adapters (Ollama, Anthropic, OpenAI) with cost tracking and consistent response format.
 ## Requirements
 ### Requirement: Provider Routing
 

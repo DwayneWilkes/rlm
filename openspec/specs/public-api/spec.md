@@ -1,7 +1,7 @@
 # public-api Specification
 
 ## Purpose
-TBD - created by archiving change add-core-specs. Update Purpose after archive.
+Provide the RLM class as the primary interface and export all public types, utilities, and adapters from @rlm/core.
 ## Requirements
 ### Requirement: RLM Class
 

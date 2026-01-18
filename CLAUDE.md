@@ -44,7 +44,7 @@ pnpm test
 pnpm --filter @rlm/core test
 
 # Run a specific test file
-pnpm --filter @rlm/core test src/budget/budget-controller.test.ts
+pnpm --filter @rlm/core test src/budget/controller.test.ts
 
 # Run tests matching a pattern
 pnpm --filter @rlm/core test -t "budget"
@@ -69,20 +69,20 @@ pnpm typecheck
 
 ### Core Components Data Flow
 
-1. User provides task + context + budget config
-2. **ContextManager** loads and optionally chunks context (string/file/directory/URL/Obsidian vault)
+1. User provides task + context string + budget config
+2. **loadContext()** prepares context (token estimation, content type detection)
 3. **PyodideSandbox** initializes with context, provides `llm_query()` and `rlm_query()` bridges
 4. **Executor** runs iteration loop: prompt → LLM response → parse code → execute → capture results
 5. **BudgetController** enforces limits on cost, tokens, time, recursion depth, iterations
 6. Loop continues until FINAL marker or budget exhaustion
 
-### Key Types (packages/core/src/types/index.ts)
+### Key Types (packages/core/src/types.ts)
 
 - `RLMConfig` - Main execution configuration
 - `RLMResult` - Execution result with output, trace, usage stats
-- `BudgetConfig` - Cost/token/time/depth/iteration limits
+- `Budget` - Cost/token/time/depth/iteration limits
 - `ExecutionTrace` - Full trace of iterations and subcalls
-- `ContextSource` - Input context specification (string/file/directory/url/obsidian-vault)
+- `ExecuteOptions` - Task, context, budget overrides, hooks
 
 ## Testing Requirements
 

@@ -1,7 +1,7 @@
 # context-loader Specification
 
 ## Purpose
-TBD - created by archiving change add-core-specs. Update Purpose after archive.
+Load and prepare context strings for REPL injection, including token estimation, content type detection, and Python string escaping.
 ## Requirements
 ### Requirement: Context Loading
 
