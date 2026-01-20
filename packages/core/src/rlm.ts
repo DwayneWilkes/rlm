@@ -30,6 +30,7 @@ import { LLMRouter } from './llm/router.js';
 import { OllamaAdapter } from './llm/adapters/ollama.js';
 import { AnthropicAdapter } from './llm/adapters/anthropic.js';
 import { OpenAIAdapter } from './llm/adapters/openai.js';
+import { ClaudeCodeAdapter } from './llm/adapters/claude-code.js';
 // Note: Executor will be created by parallel agent
 // import { Executor } from './engine/executor.js';
 
@@ -184,6 +185,14 @@ export class RLM {
           })
         );
       }
+    }
+
+    // Register Claude Code adapter (uses subscription auth, no API key needed)
+    if (this.config.provider === 'claude-code') {
+      this.router.register(
+        'claude-code',
+        new ClaudeCodeAdapter(this.config.providerOptions?.claudeCode)
+      );
     }
   }
 }

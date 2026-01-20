@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OpenAIAdapter, OPENAI_PRICING } from './openai.js';
 import type { LLMRequest } from '../../types.js';
 
+// Create mock function before hoisting
+const mockCreate = vi.hoisted(() => vi.fn());
+
 // Mock the OpenAI SDK
 vi.mock('openai', () => {
-  const mockCreate = vi.fn();
   return {
     default: vi.fn().mockImplementation(() => ({
       chat: {
@@ -13,13 +15,10 @@ vi.mock('openai', () => {
         },
       },
     })),
-    __mockCreate: mockCreate,
   };
 });
 
-// Get the mock function for assertions
 import OpenAI from 'openai';
-const mockCreate = (OpenAI as any).__mockCreate;
 
 describe('OpenAIAdapter', () => {
   beforeEach(() => {

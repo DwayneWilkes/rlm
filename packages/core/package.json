@@ -11,7 +11,9 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
     "dev": "tsup src/index.ts --format esm --dts --watch",
@@ -23,6 +25,7 @@
     "pyodide": "^0.26.0"
   },
   "optionalDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.12",
     "@anthropic-ai/sdk": "^0.30.0",
     "openai": "^4.70.0"
   },
@@ -33,16 +36,31 @@
     "vitest": "^2.1.0"
   },
   "peerDependencies": {
+    "@anthropic-ai/claude-agent-sdk": ">=0.2.0",
     "@anthropic-ai/sdk": ">=0.30.0",
     "openai": ">=4.0.0"
   },
   "peerDependenciesMeta": {
-    "@anthropic-ai/sdk": { "optional": true },
-    "openai": { "optional": true }
+    "@anthropic-ai/claude-agent-sdk": {
+      "optional": true
+    },
+    "@anthropic-ai/sdk": {
+      "optional": true
+    },
+    "openai": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=18.0.0"
   },
-  "keywords": ["llm", "recursive", "language-model", "ai", "context", "repl"],
+  "keywords": [
+    "llm",
+    "recursive",
+    "language-model",
+    "ai",
+    "context",
+    "repl"
+  ],
   "license": "MIT"
 }

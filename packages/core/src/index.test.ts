@@ -143,7 +143,7 @@ describe('@rlm/core exports', () => {
       const ctx = rlmCore.loadContext('# Hello World\n\nThis is a test.');
 
       expect(ctx.content).toBe('# Hello World\n\nThis is a test.');
-      expect(ctx.length).toBe(29);
+      expect(ctx.length).toBe(30);
       expect(ctx.tokenEstimate).toBeGreaterThan(0);
       expect(ctx.contentType).toBe('markdown');
     });

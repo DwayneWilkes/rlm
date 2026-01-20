@@ -1,18 +1,14 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OllamaAdapter } from './ollama.js';
 import type { LLMRequest } from '../../types.js';
 
-// Mock fetch globally
-const mockFetch = vi.fn();
+// Mock fetch globally using hoisted pattern
+const mockFetch = vi.hoisted(() => vi.fn());
 vi.stubGlobal('fetch', mockFetch);
 
 describe('OllamaAdapter', () => {
   beforeEach(() => {
     mockFetch.mockReset();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
   });
 
   describe('constructor', () => {

@@ -51,6 +51,7 @@ export type {
   RLMConfig,
   Budget,
   REPLConfig,
+  ClaudeCodeConfig,
 
   // Execution types
   ExecuteOptions,
@@ -173,6 +174,24 @@ export type { AnthropicConfig, ModelPricing as AnthropicModelPricing } from './l
  */
 export { OpenAIAdapter, OPENAI_PRICING } from './llm/adapters/openai.js';
 export type { OpenAIConfig, ModelPricing as OpenAIModelPricing } from './llm/adapters/openai.js';
+
+/**
+ * Claude Code adapter using the Claude Agent SDK.
+ *
+ * Uses your Claude Code subscription for RLM queries instead of direct API calls.
+ *
+ * @example
+ * ```typescript
+ * const rlm = new RLM({
+ *   provider: 'claude-code',
+ *   model: 'claude-code',
+ *   providerOptions: {
+ *     claudeCode: { maxTurns: 1, allowedTools: [] }
+ *   }
+ * });
+ * ```
+ */
+export { ClaudeCodeAdapter } from './llm/adapters/claude-code.js';
 
 // ============================================
 // SANDBOX (for advanced use cases)

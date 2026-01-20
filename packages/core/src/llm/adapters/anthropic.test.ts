@@ -2,22 +2,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AnthropicAdapter, ANTHROPIC_PRICING } from './anthropic.js';
 import type { LLMRequest } from '../../types.js';
 
+// Create mock function before hoisting
+const mockCreate = vi.hoisted(() => vi.fn());
+
 // Mock the Anthropic SDK
 vi.mock('@anthropic-ai/sdk', () => {
-  const mockCreate = vi.fn();
   return {
     default: vi.fn().mockImplementation(() => ({
       messages: {
         create: mockCreate,
       },
     })),
-    __mockCreate: mockCreate,
   };
 });
 
-// Get the mock function for assertions
 import Anthropic from '@anthropic-ai/sdk';
-const mockCreate = (Anthropic as any).__mockCreate;
 
 describe('AnthropicAdapter', () => {
   beforeEach(() => {
