@@ -291,16 +291,6 @@ console.log(budget.getUsage());
 console.log(budget.getBlockReason()); // 'Cost budget exhausted'
 ```
 
-## Packages
-
-| Package | Description | Status |
-|---------|-------------|--------|
-| `@rlm/core` | Core library: context manager, REPL sandbox, LLM router, budget controller, execution engine | ✅ Implemented |
-| `@rlm/cli` | Command-line interface | 🚧 Planned |
-| `@rlm/web-api` | REST/WebSocket API (Hono, deployable to Cloudflare Workers) | 🚧 Planned |
-| `@rlm/web-ui` | Mobile-first React PWA | 🚧 Planned |
-| `@rlm/obsidian-plugin` | Obsidian integration | 🚧 Planned |
-
 ## Development
 
 ### Prerequisites

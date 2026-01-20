@@ -59,14 +59,6 @@ pnpm typecheck
 
 ## Architecture
 
-### Monorepo Structure (pnpm workspaces)
-
-- **@rlm/core** - Core library: context manager, REPL sandbox, LLM router, budget controller, execution engine
-- **@rlm/cli** - Command-line interface
-- **@rlm/web-api** - REST/WebSocket API (Hono, deployable to Cloudflare Workers)
-- **@rlm/web-ui** - Mobile-first React PWA
-- **@rlm/obsidian-plugin** - Obsidian integration
-
 ### Core Components Data Flow
 
 1. User provides task + context string + budget config
@@ -132,9 +124,7 @@ pnpm typecheck
 
 - **Package Manager**: pnpm 9.15.0+
 - **Runtime**: Node.js 20+ / Bun
-- **Build**: tsup (core/cli/web-api), Vite (web-ui), esbuild (obsidian)
+- **Build**: tsup
 - **Testing**: Vitest
-- **LLM SDKs**: @anthropic-ai/sdk, openai
-- **Web Framework**: Hono (backend), React 18 + Zustand (frontend)
-- **UI**: Tailwind CSS, react-markdown
-- **Python Runtime**: Pyodide (browser WASM)
+- **LLM SDKs**: @anthropic-ai/sdk, openai, @anthropic-ai/claude-agent-sdk
+- **Python Runtime**: Pyodide (WASM)
