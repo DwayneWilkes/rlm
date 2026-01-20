@@ -1,5 +1,9 @@
 import type { REPLConfig, CodeExecution } from '../types/index.js';
-import { PyodideSandbox } from './pyodide.js';
+import {
+  DirectPyodideSandbox,
+  WorkerPyodideSandbox,
+  detectWorkerSupport,
+} from './pyodide.js';
 
 /**
  * Bridge callbacks for LLM interactions from within Python code.
@@ -55,6 +59,15 @@ export interface Sandbox {
   getVariable(name: string): Promise<unknown>;
 
   /**
+   * Cancel any currently running execution.
+   * When using worker isolation, this triggers a KeyboardInterrupt in Python.
+   * In non-worker mode, this is a no-op (timeout will eventually kill execution).
+   *
+   * @returns Promise that resolves when cancellation is complete
+   */
+  cancel(): Promise<void>;
+
+  /**
    * Clean up sandbox resources.
    * All Pyodide resources should be released after this call.
    */
@@ -64,7 +77,16 @@ export interface Sandbox {
 /**
  * Create a new Python sandbox instance.
  *
- * @param config - REPL configuration (timeout, maxOutputLength)
+ * By default, uses worker isolation when available (config.useWorker !== false
+ * and SharedArrayBuffer is supported). Worker isolation provides:
+ * - True execution interruption via SharedArrayBuffer
+ * - Complete memory cleanup via worker termination
+ * - Non-blocking execution
+ *
+ * Falls back to direct (non-worker) mode when workers are unavailable,
+ * which has limitations around timeout behavior and memory cleanup.
+ *
+ * @param config - REPL configuration (timeout, maxOutputLength, useWorker, etc.)
  * @param bridges - Callbacks for LLM interactions
  * @returns A new Sandbox instance
  */
@@ -72,5 +94,13 @@ export function createSandbox(
   config: REPLConfig,
   bridges: SandboxBridges
 ): Sandbox {
-  return new PyodideSandbox(config, bridges);
+  // Determine if we should use worker isolation
+  const useWorker = config.useWorker ?? detectWorkerSupport();
+
+  if (useWorker && detectWorkerSupport()) {
+    return new WorkerPyodideSandbox(config, bridges);
+  }
+
+  // Fallback to direct (non-worker) implementation
+  return new DirectPyodideSandbox(config, bridges);
 }

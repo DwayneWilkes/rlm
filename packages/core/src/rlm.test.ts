@@ -3,6 +3,27 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+
+// Mock pyodide to prevent actual WASM loading during tests
+vi.mock('pyodide', () => ({
+  loadPyodide: vi.fn().mockResolvedValue({
+    globals: {
+      set: vi.fn(),
+      get: vi.fn(),
+    },
+    runPythonAsync: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
+
+// Mock worker support detection to force direct mode
+vi.mock('./repl/pyodide.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./repl/pyodide.js')>();
+  return {
+    ...actual,
+    detectWorkerSupport: vi.fn().mockReturnValue(false),
+  };
+});
+
 import { RLM } from './rlm.js';
 import type { LLMAdapter } from './types.js';
 

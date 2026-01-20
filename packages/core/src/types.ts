@@ -23,8 +23,24 @@
  * };
  * ```
  */
+/**
+ * Configuration for the Claude Code adapter.
+ */
+export interface ClaudeCodeConfig {
+  /**
+   * Maximum number of agent turns before stopping.
+   * Defaults to 1 to prevent recursive agent loops within the adapter.
+   */
+  maxTurns?: number;
+  /**
+   * List of tools the agent is allowed to use.
+   * Defaults to empty array (no tools) for simple completion requests.
+   */
+  allowedTools?: string[];
+}
+
 export interface RLMConfig {
-  /** LLM provider identifier (e.g., 'ollama', 'anthropic', 'openai') */
+  /** LLM provider identifier (e.g., 'ollama', 'anthropic', 'openai', 'claude-code') */
   provider: string;
   /** Model identifier (e.g., 'llama3.2', 'claude-sonnet-4-20250514') */
   model: string;
@@ -34,6 +50,8 @@ export interface RLMConfig {
     baseUrl?: string;
     /** API key for cloud providers */
     apiKey?: string;
+    /** Configuration for Claude Code adapter */
+    claudeCode?: ClaudeCodeConfig;
   };
   /** Model for recursive subcalls (defaults to same as model) */
   subcallModel?: string;
@@ -80,6 +98,26 @@ export interface REPLConfig {
   timeout: number;
   /** Maximum output length before truncation (characters) */
   maxOutputLength: number;
+  /**
+   * Pyodide CDN URL or array of fallback URLs.
+   * Defaults to jsDelivr CDN.
+   */
+  indexURL?: string | string[];
+  /** Whether to load the full Python standard library (default: false) */
+  fullStdLib?: boolean;
+  /** Python packages to preload during initialization */
+  preloadPackages?: string[];
+  /**
+   * Enable worker isolation for true interruption and memory cleanup.
+   * When true (default), Pyodide runs in a Worker thread with SharedArrayBuffer
+   * for interrupt support and complete memory cleanup on destroy().
+   * Set to false to run in main thread (no true interrupt, memory may leak).
+   */
+  useWorker?: boolean;
+  /** Callback for stdout lines during execution */
+  onStdout?: (line: string) => void;
+  /** Callback for stderr lines during execution */
+  onStderr?: (line: string) => void;
 }
 
 // ============================================

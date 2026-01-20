@@ -1,6 +1,22 @@
+/**
+ * @fileoverview Pyodide-based Python execution sandbox implementations.
+ *
+ * This module provides two sandbox implementations:
+ * - WorkerPyodideSandbox: Runs in a Worker thread with true interrupt support
+ * - DirectPyodideSandbox: Runs in main thread (fallback when workers unavailable)
+ *
+ * @module @rlm/core/repl/pyodide
+ */
+
 import { loadPyodide, type PyodideInterface } from 'pyodide';
+import { Worker } from 'node:worker_threads';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import type { REPLConfig, CodeExecution } from '../types/index.js';
 import type { Sandbox, SandboxBridges } from './sandbox.js';
+import type { WorkerMessage, WorkerResponse } from './pyodide-worker.js';
+
+const DEFAULT_INDEX_URL = 'https://cdn.jsdelivr.net/pyodide/v0.26.0/full/';
 
 /**
  * Python setup code injected into every sandbox.
@@ -106,11 +122,302 @@ print(f"RLM sandbox ready. Context: {len(context):,} chars")
 `;
 
 /**
- * Pyodide-based Python execution sandbox.
- *
- * Implements the Sandbox interface using Pyodide WASM runtime.
+ * Get the Pyodide index URL from config.
  */
-export class PyodideSandbox implements Sandbox {
+function getIndexURL(config: REPLConfig): string {
+  if (!config.indexURL) {
+    return DEFAULT_INDEX_URL;
+  }
+  if (typeof config.indexURL === 'string') {
+    return config.indexURL;
+  }
+  // Return first URL from array (fallbacks would be handled at a higher level)
+  return config.indexURL[0] ?? DEFAULT_INDEX_URL;
+}
+
+/**
+ * Worker-based Pyodide sandbox with true interrupt support.
+ *
+ * This implementation runs Pyodide in a Worker thread, enabling:
+ * - True execution interruption via SharedArrayBuffer + setInterruptBuffer()
+ * - Complete memory cleanup via worker.terminate()
+ * - Non-blocking execution (doesn't freeze main thread)
+ */
+export class WorkerPyodideSandbox implements Sandbox {
+  private worker: Worker | null = null;
+  private interruptBuffer: Int32Array | null = null;
+  private sharedBuffer: SharedArrayBuffer | null = null;
+  private config: REPLConfig;
+  private bridges: SandboxBridges;
+  private initialized: boolean = false;
+  private pendingRequests = new Map<
+    string,
+    { resolve: (value: unknown) => void; reject: (error: Error) => void }
+  >();
+
+  constructor(config: REPLConfig, bridges: SandboxBridges) {
+    this.config = config;
+    this.bridges = bridges;
+  }
+
+  async initialize(context: string): Promise<void> {
+    // Create shared interrupt buffer (4 bytes for Int32)
+    this.sharedBuffer = new SharedArrayBuffer(4);
+    this.interruptBuffer = new Int32Array(this.sharedBuffer);
+
+    // Get path to worker script
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    const workerPath = join(__dirname, 'pyodide-worker.js');
+
+    // Spawn worker
+    this.worker = new Worker(workerPath);
+
+    // Setup message handlers
+    this.worker.on('message', (msg: WorkerResponse) => {
+      this.handleWorkerMessage(msg);
+    });
+
+    this.worker.on('error', (err) => {
+      // Reject all pending requests
+      for (const pending of this.pendingRequests.values()) {
+        pending.reject(err);
+      }
+      this.pendingRequests.clear();
+    });
+
+    // Wait for ready signal
+    await new Promise<void>((resolve, reject) => {
+      const readyHandler = (msg: WorkerResponse) => {
+        if (msg.type === 'ready') {
+          this.initialized = true;
+          resolve();
+        } else if (msg.type === 'error') {
+          reject(new Error(msg.message));
+        }
+      };
+
+      // Add temporary handler for init
+      const originalHandler = this.handleWorkerMessage.bind(this);
+      this.handleWorkerMessage = (msg: WorkerResponse) => {
+        readyHandler(msg);
+        originalHandler(msg);
+      };
+
+      // Send init message
+      this.worker!.postMessage({
+        type: 'init',
+        indexURL: getIndexURL(this.config),
+        context,
+        interruptBuffer: this.sharedBuffer!,
+      } satisfies WorkerMessage);
+    });
+  }
+
+  private handleWorkerMessage(msg: WorkerResponse): void {
+    switch (msg.type) {
+      case 'stdout':
+        this.config.onStdout?.(msg.line);
+        break;
+
+      case 'stderr':
+        this.config.onStderr?.(msg.line);
+        break;
+
+      case 'result': {
+        const pending = this.pendingRequests.get(msg.id);
+        if (pending) {
+          this.pendingRequests.delete(msg.id);
+          if (msg.success) {
+            pending.resolve({
+              stdout: this.truncate(msg.stdout),
+              stderr: msg.stderr,
+              duration: msg.duration,
+            });
+          } else {
+            pending.resolve({
+              stdout: '',
+              stderr: '',
+              error: msg.error,
+              duration: msg.duration,
+            });
+          }
+        }
+        break;
+      }
+
+      case 'variable': {
+        const pending = this.pendingRequests.get(msg.id);
+        if (pending) {
+          this.pendingRequests.delete(msg.id);
+          pending.resolve(msg.value);
+        }
+        break;
+      }
+
+      case 'bridge:llm': {
+        // Handle LLM bridge call from worker
+        this.bridges
+          .onLLMQuery(msg.prompt)
+          .then((result) => {
+            this.worker?.postMessage({
+              type: 'bridge:response',
+              id: msg.id,
+              result,
+            });
+          })
+          .catch((error: Error) => {
+            this.worker?.postMessage({
+              type: 'bridge:response',
+              id: msg.id,
+              error: error.message,
+            });
+          });
+        break;
+      }
+
+      case 'bridge:rlm': {
+        // Handle RLM bridge call from worker
+        this.bridges
+          .onRLMQuery(msg.task, msg.context)
+          .then((result) => {
+            this.worker?.postMessage({
+              type: 'bridge:response',
+              id: msg.id,
+              result,
+            });
+          })
+          .catch((error: Error) => {
+            this.worker?.postMessage({
+              type: 'bridge:response',
+              id: msg.id,
+              error: error.message,
+            });
+          });
+        break;
+      }
+
+      case 'error':
+        console.error('Worker error:', msg.message);
+        break;
+
+      case 'ready':
+        // Handled during initialization
+        break;
+    }
+  }
+
+  async execute(code: string): Promise<CodeExecution> {
+    if (!this.worker || !this.initialized) {
+      throw new Error('Sandbox not initialized');
+    }
+
+    const id = this.generateId();
+    const startTime = Date.now();
+
+    // Setup timeout that writes interrupt signal
+    const timeoutId = setTimeout(() => {
+      if (this.interruptBuffer) {
+        // Write SIGINT (2) to interrupt buffer
+        Atomics.store(this.interruptBuffer, 0, 2);
+      }
+    }, this.config.timeout);
+
+    try {
+      const result = await new Promise<{ stdout: string; stderr: string; error?: string; duration: number }>(
+        (resolve, reject) => {
+          this.pendingRequests.set(id, {
+            resolve: resolve as (value: unknown) => void,
+            reject,
+          });
+
+          this.worker!.postMessage({
+            type: 'execute',
+            id,
+            code,
+          } satisfies WorkerMessage);
+        }
+      );
+
+      return {
+        code,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        error: result.error,
+        duration: result.duration,
+      };
+    } finally {
+      clearTimeout(timeoutId);
+      // Reset interrupt buffer
+      if (this.interruptBuffer) {
+        Atomics.store(this.interruptBuffer, 0, 0);
+      }
+    }
+  }
+
+  async getVariable(name: string): Promise<unknown> {
+    if (!this.worker || !this.initialized) {
+      throw new Error('Sandbox not initialized');
+    }
+
+    const id = this.generateId();
+
+    return new Promise((resolve, reject) => {
+      this.pendingRequests.set(id, { resolve, reject });
+
+      this.worker!.postMessage({
+        type: 'getVariable',
+        id,
+        name,
+      } satisfies WorkerMessage);
+    });
+  }
+
+  async cancel(): Promise<void> {
+    if (this.interruptBuffer) {
+      // Write SIGINT (2) to interrupt buffer to trigger KeyboardInterrupt
+      Atomics.store(this.interruptBuffer, 0, 2);
+    }
+  }
+
+  async destroy(): Promise<void> {
+    if (this.worker) {
+      // Terminate worker completely (frees WASM memory)
+      await this.worker.terminate();
+      this.worker = null;
+    }
+    this.interruptBuffer = null;
+    this.sharedBuffer = null;
+    this.initialized = false;
+    this.pendingRequests.clear();
+  }
+
+  private generateId(): string {
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  private truncate(output: string): string {
+    if (output.length <= this.config.maxOutputLength) {
+      return output;
+    }
+    const omittedCount = output.length - this.config.maxOutputLength;
+    return (
+      output.slice(0, this.config.maxOutputLength) +
+      `\n... [truncated, ${omittedCount} chars omitted]`
+    );
+  }
+}
+
+/**
+ * Direct Pyodide sandbox running in main thread.
+ *
+ * Fallback implementation when Worker support is unavailable.
+ * Limitations:
+ * - Timeout uses Promise.race (doesn't actually stop execution)
+ * - Memory may not be fully released on destroy()
+ * - Long execution blocks main thread
+ */
+export class DirectPyodideSandbox implements Sandbox {
   private pyodide: PyodideInterface | null = null;
   private config: REPLConfig;
   private bridges: SandboxBridges;
@@ -126,14 +433,13 @@ export class PyodideSandbox implements Sandbox {
     this.context = context;
 
     this.pyodide = await loadPyodide({
-      indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.0/full/',
+      indexURL: getIndexURL(this.config),
     });
 
     // Inject context as a Python variable
     this.pyodide.globals.set('context', context);
 
     // Inject bridge functions
-    // These allow Python to call back into TypeScript
     this.pyodide.globals.set('__llm_query_bridge__', this.bridges.onLLMQuery);
     this.pyodide.globals.set('__rlm_query_bridge__', this.bridges.onRLMQuery);
     this.pyodide.globals.set('__context_ref__', context);
@@ -222,7 +528,6 @@ sys.stderr = __old_stderr__
         return undefined;
       }
       // Convert Python objects to JS
-      // toJs() is a method on Pyodide proxy objects
       if (typeof value?.toJs === 'function') {
         return value.toJs();
       }
@@ -230,6 +535,11 @@ sys.stderr = __old_stderr__
     } catch {
       return undefined;
     }
+  }
+
+  async cancel(): Promise<void> {
+    // No-op in direct mode - timeout will eventually kill execution
+    // True cancellation requires worker isolation
   }
 
   async destroy(): Promise<void> {
@@ -241,18 +551,12 @@ sys.stderr = __old_stderr__
     this.initialized = false;
   }
 
-  /**
-   * Create a timeout promise that rejects after the specified duration.
-   */
   private timeout(ms: number): Promise<never> {
     return new Promise((_, reject) => {
       setTimeout(() => reject(new Error(`Execution timeout (${ms}ms)`)), ms);
     });
   }
 
-  /**
-   * Truncate output if it exceeds maxOutputLength.
-   */
   private truncate(output: string): string {
     if (output.length <= this.config.maxOutputLength) {
       return output;
@@ -264,3 +568,28 @@ sys.stderr = __old_stderr__
     );
   }
 }
+
+/**
+ * Detect if worker support with SharedArrayBuffer is available.
+ */
+export function detectWorkerSupport(): boolean {
+  // Check for SharedArrayBuffer (required for interrupt)
+  if (typeof SharedArrayBuffer === 'undefined') {
+    return false;
+  }
+
+  // Check for Worker support (Node.js worker_threads)
+  try {
+    // In Node.js, we use worker_threads
+    // The import at the top will fail if not available
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Legacy export for backwards compatibility.
+ * Uses DirectPyodideSandbox (same as original implementation).
+ */
+export const PyodideSandbox = DirectPyodideSandbox;

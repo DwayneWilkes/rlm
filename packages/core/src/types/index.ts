@@ -47,6 +47,26 @@ export interface REPLConfig {
   timeout: number;
   /** Max output length before truncation */
   maxOutputLength: number;
+  /**
+   * Pyodide CDN URL or array of fallback URLs.
+   * Defaults to jsDelivr CDN.
+   */
+  indexURL?: string | string[];
+  /** Whether to load the full Python standard library (default: false) */
+  fullStdLib?: boolean;
+  /** Python packages to preload during initialization */
+  preloadPackages?: string[];
+  /**
+   * Enable worker isolation for true interruption and memory cleanup.
+   * When true (default), Pyodide runs in a Worker thread with SharedArrayBuffer
+   * for interrupt support and complete memory cleanup on destroy().
+   * Set to false to run in main thread (no true interrupt, memory may leak).
+   */
+  useWorker?: boolean;
+  /** Callback for stdout lines during execution */
+  onStdout?: (line: string) => void;
+  /** Callback for stderr lines during execution */
+  onStderr?: (line: string) => void;
 }
 
 // ============================================
