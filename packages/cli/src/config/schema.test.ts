@@ -136,7 +136,7 @@ describe('ConfigSchema', () => {
       const config: Config = ConfigSchema.parse({});
 
       // Type checks - these would fail at compile time if types are wrong
-      const provider: 'anthropic' | 'openai' | 'ollama' = config.provider;
+      const provider: 'anthropic' | 'openai' | 'ollama' | 'claude-code' = config.provider;
       const maxCost: number = config.budget.maxCost;
       const format: 'text' | 'json' | 'yaml' = config.output.format;
 

@@ -10,7 +10,7 @@ import { logger } from '../utils/logger.js';
 /**
  * LLM provider options.
  */
-export const ProviderSchema = z.enum(['anthropic', 'openai', 'ollama']);
+export const ProviderSchema = z.enum(['anthropic', 'openai', 'ollama', 'claude-code']);
 export type Provider = z.infer<typeof ProviderSchema>;
 
 /**
@@ -91,6 +91,8 @@ export const ConfigSchema = z
     provider: ProviderSchema.default('ollama'),
     /** Model name for the provider */
     model: z.string().default('llama3.2'),
+    /** Model for subcalls (llm_query, sub-RLMs) - defaults to main model */
+    subcallModel: z.string().optional(),
     /** Budget limits */
     budget: BudgetConfigSchema,
     /** REPL/sandbox settings */
