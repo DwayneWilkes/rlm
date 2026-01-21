@@ -8,6 +8,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import type { REPLConfig, CodeExecution } from '../types/index.js';
@@ -67,12 +68,23 @@ function createSafeEnvironment(): NodeJS.ProcessEnv {
 
 /**
  * Find the Python runner script location.
- * Looks in package directory under python/rlm_sandbox.py
+ * Handles both development (src/repl/) and built (dist/) directory structures.
  */
 function findPythonScript(): string {
-  // In built distribution, the script is in packages/core/python/
-  // From src/repl/, go up two levels to packages/core/
-  return join(__dirname, '..', '..', 'python', 'rlm_sandbox.py');
+  // Built mode: __dirname is packages/core/dist/ → go up 1 level
+  const builtPath = join(__dirname, '..', 'python', 'rlm_sandbox.py');
+  if (existsSync(builtPath)) {
+    return builtPath;
+  }
+
+  // Development mode: __dirname is packages/core/src/repl/ → go up 2 levels
+  const devPath = join(__dirname, '..', '..', 'python', 'rlm_sandbox.py');
+  if (existsSync(devPath)) {
+    return devPath;
+  }
+
+  // Fallback to built path (will error with helpful message if not found)
+  return builtPath;
 }
 
 /**
