@@ -638,4 +638,153 @@ describe('BudgetController', () => {
       });
     });
   });
+
+  describe('getAllocatedBudgetDescription', () => {
+    it('returns formatted string with allocated resources at depth 0', () => {
+      const controller = new BudgetController({
+        maxCost: 10.0,
+        maxIterations: 30,
+        maxDepth: 3,
+      });
+
+      const description = controller.getAllocatedBudgetDescription(0);
+
+      // Sub-budget allocates 50% of remaining resources
+      // At depth 0: remaining cost = 10.0, allocated = 5.0
+      // At depth 0: remaining iterations = 30, allocated = 15 (ceil(30 * 0.5))
+      // Remaining depth for subcall = maxDepth - depth - 1 = 3 - 0 - 1 = 2
+      expect(description).toContain('$5.00');
+      expect(description).toContain('15 iterations');
+      expect(description).toContain('depth 2');
+      expect(description).toContain("parent's $10.00");
+      expect(description).toContain('30 iterations');
+    });
+
+    it('returns formatted string with allocated resources at depth 1', () => {
+      const controller = new BudgetController({
+        maxCost: 8.0,
+        maxIterations: 20,
+        maxDepth: 4,
+      });
+      controller.record({ cost: 2.0 }); // 6.0 remaining
+
+      const description = controller.getAllocatedBudgetDescription(1);
+
+      // At depth 1: remaining cost = 6.0, allocated = 3.0
+      // At depth 1: remaining iterations = 20, allocated = 10
+      // Remaining depth for subcall = maxDepth - depth - 1 = 4 - 1 - 1 = 2
+      expect(description).toContain('$3.00');
+      expect(description).toContain('10 iterations');
+      expect(description).toContain('depth 2');
+      expect(description).toContain("parent's $6.00");
+      expect(description).toContain('20 iterations');
+    });
+
+    it('shows remaining iterations in parent context', () => {
+      const controller = new BudgetController({
+        maxCost: 5.0,
+        maxIterations: 30,
+        maxDepth: 2,
+      });
+      controller.record({ cost: 1.0, iteration: true }); // cost: 4.0 remaining, iterations: 29 remaining
+
+      const description = controller.getAllocatedBudgetDescription(0);
+
+      // Allocated: 50% of remaining = $2.00 / 15 iterations
+      expect(description).toContain('$2.00');
+      expect(description).toContain('15 iterations');
+      // Parent context shows remaining
+      expect(description).toContain("parent's $4.00");
+      expect(description).toContain('29 iterations');
+    });
+
+    it('handles zero remaining depth', () => {
+      const controller = new BudgetController({
+        maxCost: 5.0,
+        maxIterations: 20,
+        maxDepth: 1,
+      });
+
+      const description = controller.getAllocatedBudgetDescription(0);
+
+      // Remaining depth = 1 - 0 - 1 = 0
+      expect(description).toContain('depth 0');
+    });
+  });
+
+  describe('shouldDowngradeToLLMQuery', () => {
+    it('returns true when remaining cost is below threshold', () => {
+      const controller = new BudgetController({ maxCost: 1.0 });
+      controller.record({ cost: 0.55 }); // 0.45 remaining, below $0.50
+
+      expect(controller.shouldDowngradeToLLMQuery()).toBe(true);
+    });
+
+    it('returns true when remaining cost equals threshold', () => {
+      const controller = new BudgetController({ maxCost: 1.0 });
+      controller.record({ cost: 0.50 }); // 0.50 remaining, equals threshold
+
+      expect(controller.shouldDowngradeToLLMQuery()).toBe(true);
+    });
+
+    it('returns false when remaining cost is above threshold', () => {
+      const controller = new BudgetController({ maxCost: 1.0 });
+      controller.record({ cost: 0.49 }); // 0.51 remaining, above $0.50
+
+      expect(controller.shouldDowngradeToLLMQuery()).toBe(false);
+    });
+
+    it('returns true when remaining iterations are below threshold', () => {
+      const controller = new BudgetController({ maxIterations: 10 });
+      for (let i = 0; i < 6; i++) {
+        controller.record({ iteration: true }); // 4 remaining, below 5
+      }
+
+      expect(controller.shouldDowngradeToLLMQuery()).toBe(true);
+    });
+
+    it('returns true when remaining iterations equal threshold', () => {
+      const controller = new BudgetController({ maxIterations: 10 });
+      for (let i = 0; i < 5; i++) {
+        controller.record({ iteration: true }); // 5 remaining, equals threshold
+      }
+
+      expect(controller.shouldDowngradeToLLMQuery()).toBe(true);
+    });
+
+    it('returns false when remaining iterations are above threshold', () => {
+      const controller = new BudgetController({ maxIterations: 10 });
+      for (let i = 0; i < 4; i++) {
+        controller.record({ iteration: true }); // 6 remaining, above 5
+      }
+
+      expect(controller.shouldDowngradeToLLMQuery()).toBe(false);
+    });
+
+    it('returns true when both cost and iterations are low', () => {
+      const controller = new BudgetController({
+        maxCost: 1.0,
+        maxIterations: 10,
+      });
+      controller.record({ cost: 0.6 }); // 0.4 remaining
+      for (let i = 0; i < 6; i++) {
+        controller.record({ iteration: true }); // 4 remaining
+      }
+
+      expect(controller.shouldDowngradeToLLMQuery()).toBe(true);
+    });
+
+    it('returns false when both resources are sufficient', () => {
+      const controller = new BudgetController({
+        maxCost: 10.0,
+        maxIterations: 30,
+      });
+      controller.record({ cost: 1.0 }); // 9.0 remaining
+      for (let i = 0; i < 5; i++) {
+        controller.record({ iteration: true }); // 25 remaining
+      }
+
+      expect(controller.shouldDowngradeToLLMQuery()).toBe(false);
+    });
+  });
 });

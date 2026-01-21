@@ -11,6 +11,16 @@ import type { Budget, Usage } from '../types.js';
 import { DEFAULT_BUDGET } from '../types.js';
 
 /**
+ * Threshold for downgrading rlm_query to llm_query when cost is low.
+ */
+export const DOWNGRADE_COST_THRESHOLD = 0.5;
+
+/**
+ * Threshold for downgrading rlm_query to llm_query when iterations are low.
+ */
+export const DOWNGRADE_ITERATION_THRESHOLD = 5;
+
+/**
  * Callback type for budget warning notifications.
  */
 export type BudgetWarningHandler = (warning: string) => void;
@@ -235,6 +245,107 @@ export class BudgetController {
       return 'Max iterations reached';
     }
     return null;
+  }
+
+  /**
+   * Get a formatted description of the budget allocated for a subcall.
+   *
+   * Returns a human-readable string showing what resources are allocated
+   * (50% of remaining) and the parent's remaining budget for context.
+   *
+   * @param depth - Current recursion depth
+   * @returns Formatted string with allocated and parent budget info
+   *
+   * @example
+   * ```
+   * "Allocated: $2.50 / 15 iterations at depth 2 (from parent's $5.00 / 30 iterations)"
+   * ```
+   */
+  getAllocatedBudgetDescription(depth: number): string {
+    console.debug('[BudgetController] getAllocatedBudgetDescription: depth=%d', depth);
+
+    const remaining = this.getRemaining();
+    const subBudget = this.getSubBudget(depth);
+
+    console.debug(
+      '[BudgetController] getAllocatedBudgetDescription: remaining={cost: $%.2f, tokens: %d, time: %dms, iterations: %d}',
+      remaining.cost,
+      remaining.tokens,
+      remaining.time,
+      remaining.iterations
+    );
+
+    const allocatedCost = subBudget.maxCost!.toFixed(2);
+    const allocatedIterations = subBudget.maxIterations!;
+    const remainingDepth = subBudget.maxDepth!;
+
+    const parentCost = remaining.cost.toFixed(2);
+    const parentIterations = remaining.iterations;
+
+    const output = (
+      `Allocated: $${allocatedCost} / ${allocatedIterations} iterations ` +
+      `at depth ${remainingDepth} ` +
+      `(from parent's $${parentCost} / ${parentIterations} iterations)`
+    );
+
+    console.debug(
+      '[BudgetController] getAllocatedBudgetDescription: output="%s"',
+      output
+    );
+
+    return output;
+  }
+
+  /**
+   * Check if budget is too low and subcalls should use llm_query instead.
+   *
+   * Returns true when remaining resources are below thresholds:
+   * - Cost < $0.50
+   * - Iterations <= 5
+   *
+   * This allows the system to gracefully degrade to simpler queries
+   * when budget is running low.
+   *
+   * @returns true if should downgrade to llm_query, false otherwise
+   */
+  shouldDowngradeToLLMQuery(): boolean {
+    console.debug('[BudgetController] shouldDowngradeToLLMQuery: called');
+
+    const remaining = this.getRemaining();
+
+    console.debug(
+      '[BudgetController] shouldDowngradeToLLMQuery: remaining={cost: $%.2f, iterations: %d}',
+      remaining.cost,
+      remaining.iterations
+    );
+
+    const costBelowThreshold = remaining.cost <= DOWNGRADE_COST_THRESHOLD;
+    const iterationsBelowThreshold =
+      remaining.iterations <= DOWNGRADE_ITERATION_THRESHOLD;
+
+    console.debug(
+      '[BudgetController] shouldDowngradeToLLMQuery: comparison={cost: %.2f <= %.2f = %s, iterations: %d <= %d = %s}',
+      remaining.cost,
+      DOWNGRADE_COST_THRESHOLD,
+      costBelowThreshold,
+      remaining.iterations,
+      DOWNGRADE_ITERATION_THRESHOLD,
+      iterationsBelowThreshold
+    );
+
+    const shouldDowngrade = costBelowThreshold || iterationsBelowThreshold;
+
+    console.debug(
+      '[BudgetController] shouldDowngradeToLLMQuery: decision=%s, reason=%s',
+      shouldDowngrade,
+      shouldDowngrade
+        ? costBelowThreshold
+          ? 'cost below threshold'
+          : 'iterations below threshold'
+        : 'sufficient budget'
+    );
+
+    return shouldDowngrade;
   }
 
   /**
