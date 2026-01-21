@@ -18,9 +18,6 @@ An AI-powered task decomposition and research system that executes tasks iterati
 ### CLI (Recommended)
 
 ```bash
-# Install globally
-npm install -g @rlm/cli
-
 # Run a task with a context file
 rlm run "Summarize the key points" --context document.txt
 
@@ -32,6 +29,8 @@ rlm daemon start
 rlm run "Quick analysis" --context data.txt
 rlm daemon stop
 ```
+
+> **Note**: The CLI is not yet published to npm. See [Development](#development) for local installation.
 
 ### Programmatic API
 
@@ -57,11 +56,28 @@ console.log(result.usage); // { cost, tokens, duration, iterations, subcalls }
 
 ## Installation
 
-```bash
-# CLI (recommended for most users)
-npm install -g @rlm/cli
+### Local Development (CLI not yet published)
 
-# Or as a library in your project
+```bash
+# Clone and build
+git clone https://github.com/DwayneWilkes/rlm.git
+cd rlm
+pnpm install
+pnpm build
+
+# Option 1: Run directly from monorepo
+pnpm --filter @rlm/cli start run "Your task" --context file.txt
+
+# Option 2: Link globally for `rlm` command
+cd packages/cli
+pnpm link --global
+rlm run "Your task" --context file.txt
+```
+
+### Library (for programmatic use)
+
+```bash
+# As a library in your project (when published)
 pnpm add @rlm/core
 
 # Optional: Install cloud provider SDKs
@@ -413,6 +429,7 @@ console.log(budget.getBlockReason()); // 'Cost budget exhausted'
 
 - Node.js 20+
 - pnpm 9.15.0+
+- Python 3.8+ (for native sandbox backend)
 
 ### Setup
 
@@ -428,17 +445,38 @@ pnpm install
 pnpm build
 ```
 
+### Running the CLI Locally
+
+```bash
+# Option 1: Run directly (no global install)
+pnpm --filter @rlm/cli start run "Your task" --context file.txt
+
+# Option 2: Link globally for `rlm` command
+cd packages/cli
+pnpm link --global
+cd ../..
+
+# Now you can use `rlm` anywhere
+rlm run "Analyze this code" --context src/
+rlm daemon start
+rlm config show
+```
+
 ### Commands
 
 ```bash
-# Run in development mode
+# Development mode (watch for changes)
 pnpm dev
 
-# Run tests
+# Run tests (watch mode)
 pnpm test
 
+# Run tests once (for CI/scripts)
+pnpm test:run
+
 # Run tests for specific package
-pnpm --filter @rlm/core test
+pnpm --filter @rlm/core test:run
+pnpm --filter @rlm/cli test:run
 
 # Lint and typecheck
 pnpm lint
