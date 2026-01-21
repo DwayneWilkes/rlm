@@ -8,12 +8,13 @@
 
 import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
-import { RLM } from '@rlm/core';
+import { RLM, type SandboxFactory } from '@rlm/core';
 import { PDFParse } from 'pdf-parse';
 import { loadConfig, mergeConfig, type Config } from '../config/index.js';
-import { detectBestBackend } from '../sandbox/index.js';
+import { detectBestBackend, createSandbox } from '../sandbox/index.js';
 import { createFormatter, type OutputFormat } from '../output/index.js';
 import { validateFilePathOrThrow } from '../utils/index.js';
+import type { SandboxBackend } from '../types/index.js';
 
 /**
  * Options for the run command.
@@ -114,11 +115,26 @@ export function createRunCommand(): Command {
         // Create formatter
         const formatter = createFormatter(config.output.format);
 
-        // Create RLM instance
+        // Build sandbox factory that uses the resolved backend
+        const resolvedBackend = backend as SandboxBackend;
+        const sandboxFactory: SandboxFactory = (replConfig, bridges) =>
+          createSandbox(
+            {
+              backend: resolvedBackend,
+              timeout: replConfig.timeout,
+              maxOutputLength: replConfig.maxOutputLength,
+              useWorker: replConfig.useWorker,
+              indexURL: replConfig.indexURL,
+            },
+            bridges
+          );
+
+        // Create RLM instance with injected sandboxFactory
         const rlm = new RLM({
           provider: config.provider,
           model: config.model,
           subcallModel: config.subcallModel,
+          sandboxFactory,
           defaultBudget: {
             maxCost: config.budget.maxCost,
             maxIterations: config.budget.maxIterations,

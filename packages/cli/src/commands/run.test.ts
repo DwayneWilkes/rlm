@@ -455,5 +455,87 @@ describe('createRunCommand', () => {
         expect(mockPDFParse).not.toHaveBeenCalled();
       });
     });
+
+    describe('sandboxFactory injection', () => {
+      it('should pass sandboxFactory to RLM using detected backend', async () => {
+        mockDetectBestBackend.mockResolvedValue('native');
+        mockExecute.mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          trace: {},
+          usage: {},
+          warnings: [],
+        });
+
+        const program = new Command().addCommand(createRunCommand());
+        await program.parseAsync(['run', 'Task'], { from: 'user' });
+
+        // Verify RLM was created with sandboxFactory
+        expect(mockRLM).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sandboxFactory: expect.any(Function),
+          })
+        );
+      });
+
+      it('should pass sandboxFactory using explicit backend', async () => {
+        mockExecute.mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          trace: {},
+          usage: {},
+          warnings: [],
+        });
+
+        const program = new Command().addCommand(createRunCommand());
+        await program.parseAsync(['run', 'Task', '--backend', 'pyodide'], { from: 'user' });
+
+        // Verify RLM was created with sandboxFactory
+        expect(mockRLM).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sandboxFactory: expect.any(Function),
+          })
+        );
+      });
+
+      it('should create sandbox with correct backend when factory is called', async () => {
+        let capturedFactory: any = null;
+        mockRLM.mockImplementation((config: any) => {
+          capturedFactory = config.sandboxFactory;
+          return { execute: mockExecute };
+        });
+
+        mockDetectBestBackend.mockResolvedValue('native');
+        mockExecute.mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          trace: {},
+          usage: {},
+          warnings: [],
+        });
+
+        const program = new Command().addCommand(createRunCommand());
+        await program.parseAsync(['run', 'Task'], { from: 'user' });
+
+        // Verify factory was captured
+        expect(capturedFactory).not.toBeNull();
+        expect(typeof capturedFactory).toBe('function');
+
+        // Call the factory to verify it creates sandbox with correct config
+        const mockBridges = {
+          onLLMQuery: async () => '',
+          onRLMQuery: async () => '',
+        };
+        capturedFactory({ timeout: 30000, maxOutputLength: 50000 }, mockBridges);
+
+        // Verify CLI's createSandbox was called with native backend
+        expect(mockCreateSandbox).toHaveBeenCalledWith(
+          expect.objectContaining({
+            backend: 'native',
+          }),
+          mockBridges
+        );
+      });
+    });
   });
 });

@@ -202,6 +202,29 @@ describe('rlm run E2E', () => {
     });
   });
 
+  describe('backend selection', () => {
+    it.skipIf(!isCLIBuilt())('should accept --backend native flag', async () => {
+      const result = await runCLI(['run', '--help']);
+      expect(result.stdout).toContain('--backend');
+      expect(result.stdout).toContain('native');
+    });
+
+    it.skipIf(!isCLIBuilt())('should accept --backend pyodide flag', async () => {
+      const result = await runCLI(['run', '--help']);
+      expect(result.stdout).toContain('pyodide');
+    });
+
+    it.skipIf(!isCLIBuilt())('should accept --backend daemon flag', async () => {
+      const result = await runCLI(['run', '--help']);
+      expect(result.stdout).toContain('daemon');
+    });
+
+    it.skipIf(!isCLIBuilt())('should accept -b shorthand for backend', async () => {
+      const result = await runCLI(['run', '--help']);
+      expect(result.stdout).toContain('-b');
+    });
+  });
+
   // These tests require actual LLM API keys and are skipped in CI
   describe.skip('native backend execution', () => {
     it.skipIf(!isPythonAvailable())('should execute with native backend', async () => {

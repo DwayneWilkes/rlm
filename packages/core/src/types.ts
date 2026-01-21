@@ -8,6 +8,62 @@
  */
 
 // ============================================
+// SANDBOX FACTORY (for dependency injection)
+// ============================================
+
+// Forward declarations for sandbox types (defined in repl/sandbox.ts)
+// These avoid circular imports while enabling type-safe factory injection.
+
+/**
+ * Abstract interface for a Python execution sandbox.
+ * Re-exported here to enable SandboxFactory type without circular imports.
+ */
+export interface SandboxInterface {
+  initialize(context: string): Promise<void>;
+  execute(code: string): Promise<CodeExecution>;
+  getVariable(name: string): Promise<unknown>;
+  cancel(): Promise<void>;
+  destroy(): Promise<void>;
+}
+
+/**
+ * Bridge callbacks for LLM interactions from within Python code.
+ * Re-exported here to enable SandboxFactory type without circular imports.
+ */
+export interface SandboxBridgesInterface {
+  onLLMQuery: (prompt: string) => Promise<string>;
+  onRLMQuery: (task: string, context?: string) => Promise<string>;
+}
+
+/**
+ * Factory function for creating sandbox instances.
+ *
+ * Used to inject custom sandbox implementations (native, daemon, etc.)
+ * into the RLM executor. This enables the CLI to provide different
+ * backend implementations without modifying core.
+ *
+ * @example
+ * ```typescript
+ * const factory: SandboxFactory = (config, bridges) =>
+ *   new NativePythonSandbox(config, bridges);
+ *
+ * const rlm = new RLM({
+ *   provider: 'ollama',
+ *   model: 'llama3.2',
+ *   sandboxFactory: factory,
+ * });
+ * ```
+ *
+ * TODO: Remove fallback in v1.0 - Once CLI is the primary entry point,
+ * consider making sandboxFactory required or moving all backend
+ * implementations to core.
+ */
+export type SandboxFactory = (
+  config: REPLConfig,
+  bridges: SandboxBridgesInterface
+) => SandboxInterface;
+
+// ============================================
 // CONFIGURATION
 // ============================================
 
@@ -59,6 +115,13 @@ export interface RLMConfig {
   defaultBudget?: Partial<Budget>;
   /** REPL configuration */
   repl?: Partial<REPLConfig>;
+  /**
+   * Custom sandbox factory for dependency injection.
+   * When provided, the executor uses this factory to create sandboxes
+   * instead of the default Pyodide-based createSandbox().
+   * This enables CLI to inject native Python or daemon-based sandboxes.
+   */
+  sandboxFactory?: SandboxFactory;
 }
 
 /**

@@ -114,8 +114,8 @@ export class Executor {
 
     // Create sandbox with bridges
     const replConfig = { ...DEFAULT_REPL_CONFIG, ...this.config.repl };
-    const sandbox = createSandbox(replConfig, {
-      onLLMQuery: async (prompt) => {
+    const bridges = {
+      onLLMQuery: async (prompt: string) => {
         const response = await this.router.complete(this.config.provider, {
           model: this.config.subcallModel ?? this.config.model,
           systemPrompt: 'You are a helpful assistant. Be concise.',
@@ -164,7 +164,13 @@ export class Executor {
 
         return subResult.output;
       },
-    });
+    };
+
+    // Use injected sandboxFactory if provided, otherwise fall back to default
+    // TODO: Remove fallback in v1.0 - see design.md for rationale
+    const sandbox = this.config.sandboxFactory
+      ? this.config.sandboxFactory(replConfig, bridges)
+      : createSandbox(replConfig, bridges);
 
     try {
       await sandbox.initialize(escapeForPython(options.context));

@@ -53,6 +53,11 @@ export type {
   REPLConfig,
   ClaudeCodeConfig,
 
+  // Sandbox factory types (for dependency injection)
+  SandboxFactory,
+  SandboxInterface,
+  SandboxBridgesInterface,
+
   // Execution types
   ExecuteOptions,
   ExecutionHooks,

@@ -693,4 +693,82 @@ describe('Executor', () => {
       expect(Array.isArray(result.trace.subcalls)).toBe(true);
     });
   });
+
+  describe('sandboxFactory injection', () => {
+    it('should use sandboxFactory when provided in config', async () => {
+      const customSandbox = createMockSandbox();
+      const factoryFn = vi.fn().mockReturnValue(customSandbox);
+
+      const configWithFactory: RLMConfig = {
+        ...config,
+        sandboxFactory: factoryFn,
+      };
+
+      const adapter = createMockAdapter([{ content: 'FINAL(Done)' }]);
+      router.register('test', adapter);
+
+      const executor = new Executor(configWithFactory, router);
+      await executor.execute({
+        task: 'Task',
+        context: 'Context',
+      });
+
+      // Verify the factory was called
+      expect(factoryFn).toHaveBeenCalledTimes(1);
+      // Verify it was called with config and bridges
+      expect(factoryFn).toHaveBeenCalledWith(
+        expect.objectContaining({ timeout: expect.any(Number) }),
+        expect.objectContaining({
+          onLLMQuery: expect.any(Function),
+          onRLMQuery: expect.any(Function),
+        })
+      );
+      // Verify the custom sandbox was used
+      expect(customSandbox.initialize).toHaveBeenCalled();
+      expect(customSandbox.destroy).toHaveBeenCalled();
+    });
+
+    it('should fall back to createSandbox when no factory provided', async () => {
+      const { createSandbox } = await import('../repl/sandbox.js');
+
+      const adapter = createMockAdapter([{ content: 'FINAL(Done)' }]);
+      router.register('test', adapter);
+
+      const executor = new Executor(config, router);
+      await executor.execute({
+        task: 'Task',
+        context: 'Context',
+      });
+
+      // Verify the default createSandbox was called
+      expect(createSandbox).toHaveBeenCalled();
+    });
+
+    it('should pass bridges to sandboxFactory', async () => {
+      let capturedBridges: any = null;
+      const customSandbox = createMockSandbox();
+
+      const configWithFactory: RLMConfig = {
+        ...config,
+        sandboxFactory: (_config, bridges) => {
+          capturedBridges = bridges;
+          return customSandbox;
+        },
+      };
+
+      const adapter = createMockAdapter([{ content: 'FINAL(Done)' }]);
+      router.register('test', adapter);
+
+      const executor = new Executor(configWithFactory, router);
+      await executor.execute({
+        task: 'Task',
+        context: 'Context',
+      });
+
+      // Verify bridges were passed
+      expect(capturedBridges).not.toBeNull();
+      expect(typeof capturedBridges.onLLMQuery).toBe('function');
+      expect(typeof capturedBridges.onRLMQuery).toBe('function');
+    });
+  });
 });

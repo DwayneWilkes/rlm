@@ -13,6 +13,9 @@ import {
   type RLMConfig,
   type Budget,
   type REPLConfig,
+  type SandboxFactory,
+  type SandboxInterface,
+  type SandboxBridgesInterface,
   // Execution types
   type ExecuteOptions,
   type ExecutionHooks,
@@ -86,6 +89,75 @@ describe('types', () => {
         };
 
         expect(config.repl?.timeout).toBe(60000);
+      });
+
+      it('should accept optional sandboxFactory', () => {
+        const mockSandbox: SandboxInterface = {
+          initialize: async () => {},
+          execute: async () => ({ code: '', stdout: '', stderr: '', duration: 0 }),
+          getVariable: async () => undefined,
+          cancel: async () => {},
+          destroy: async () => {},
+        };
+
+        const factory: SandboxFactory = () => mockSandbox;
+
+        const config: RLMConfig = {
+          provider: 'ollama',
+          model: 'llama3.2',
+          sandboxFactory: factory,
+        };
+
+        expect(config.sandboxFactory).toBeDefined();
+        expect(typeof config.sandboxFactory).toBe('function');
+      });
+    });
+
+    describe('SandboxFactory', () => {
+      it('should be a function that takes REPLConfig and SandboxBridgesInterface', () => {
+        const mockSandbox: SandboxInterface = {
+          initialize: async () => {},
+          execute: async () => ({ code: '', stdout: '', stderr: '', duration: 0 }),
+          getVariable: async () => undefined,
+          cancel: async () => {},
+          destroy: async () => {},
+        };
+
+        const factory: SandboxFactory = (config: REPLConfig, bridges: SandboxBridgesInterface) => {
+          expect(config.timeout).toBeDefined();
+          expect(bridges.onLLMQuery).toBeDefined();
+          return mockSandbox;
+        };
+
+        const result = factory(
+          { timeout: 30000, maxOutputLength: 50000 },
+          {
+            onLLMQuery: async () => 'response',
+            onRLMQuery: async () => 'result',
+          }
+        );
+
+        expect(result).toBe(mockSandbox);
+      });
+
+      it('should return a SandboxInterface instance', () => {
+        const mockSandbox: SandboxInterface = {
+          initialize: async () => {},
+          execute: async () => ({ code: '', stdout: '', stderr: '', duration: 0 }),
+          getVariable: async () => undefined,
+          cancel: async () => {},
+          destroy: async () => {},
+        };
+
+        const factory: SandboxFactory = () => mockSandbox;
+        const sandbox = factory(
+          DEFAULT_REPL_CONFIG,
+          { onLLMQuery: async () => '', onRLMQuery: async () => '' }
+        );
+
+        expect(sandbox.initialize).toBeDefined();
+        expect(sandbox.execute).toBeDefined();
+        expect(sandbox.destroy).toBeDefined();
       });
     });
 
