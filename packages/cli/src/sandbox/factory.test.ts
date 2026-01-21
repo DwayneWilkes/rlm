@@ -42,16 +42,21 @@ describe('createSandbox Factory', () => {
       expect(sandbox.execute).toBeDefined();
     });
 
-    it('throws error when backend is daemon (not implemented)', () => {
+    it('creates daemon sandbox when backend is daemon', () => {
       const config: CreateSandboxConfig = {
         backend: 'daemon',
         timeout: 30000,
         maxOutputLength: 50000,
       };
 
-      expect(() => createSandbox(config, mockBridges)).toThrow(
-        'Daemon backend is not yet implemented'
-      );
+      const sandbox = createSandbox(config, mockBridges);
+
+      expect(sandbox).toBeDefined();
+      expect(sandbox.initialize).toBeDefined();
+      expect(sandbox.execute).toBeDefined();
+      expect(sandbox.getVariable).toBeDefined();
+      expect(sandbox.cancel).toBeDefined();
+      expect(sandbox.destroy).toBeDefined();
     });
   });
 

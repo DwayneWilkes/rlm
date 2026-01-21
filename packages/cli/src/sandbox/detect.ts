@@ -10,6 +10,7 @@
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { SandboxBackend } from '../types/index.js';
+import { isDaemonRunning as checkDaemonSocket } from '../daemon/detect.js';
 
 const execAsync = promisify(exec);
 
@@ -40,7 +41,8 @@ export async function isNativeAvailable(pythonPath = 'python'): Promise<boolean>
 /**
  * Check if the sandbox daemon is running.
  *
- * Currently returns false as the daemon is not yet implemented.
+ * Delegates to the daemon detection module which checks if the daemon
+ * socket is available and responding.
  *
  * @returns Promise resolving to true if daemon is running
  *
@@ -52,8 +54,7 @@ export async function isNativeAvailable(pythonPath = 'python'): Promise<boolean>
  * ```
  */
 export async function isDaemonRunning(): Promise<boolean> {
-  // Stub implementation - daemon not yet implemented
-  return false;
+  return checkDaemonSocket();
 }
 
 /**

@@ -15,6 +15,8 @@ import {
   type REPLConfig,
 } from '@rlm/core';
 import type { SandboxBackend } from '../types/index.js';
+import { DaemonClientSandbox } from '../daemon/client-sandbox.js';
+import { getSocketPath } from '../daemon/detect.js';
 
 /**
  * Configuration for createSandbox factory.
@@ -74,7 +76,7 @@ export function createSandbox(
       return createPyodideSandbox(replConfig, bridges);
 
     case 'daemon':
-      throw new Error('Daemon backend is not yet implemented');
+      return new DaemonClientSandbox(getSocketPath(), bridges);
 
     default: {
       // Exhaustive check - TypeScript will error if a case is missing

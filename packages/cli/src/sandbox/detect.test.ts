@@ -29,7 +29,14 @@ describe('Backend Detection', () => {
   });
 
   describe('isDaemonRunning', () => {
-    it('returns false (stub implementation)', async () => {
+    it('returns boolean based on daemon socket availability', async () => {
+      // Real implementation checks if daemon socket is available
+      const result = await isDaemonRunning();
+      expect(typeof result).toBe('boolean');
+    });
+
+    it('returns false when daemon is not started', async () => {
+      // Without a daemon running, should return false
       const result = await isDaemonRunning();
       expect(result).toBe(false);
     });
