@@ -137,5 +137,15 @@ describe('createSandbox Factory', () => {
       const sandbox: Sandbox = createSandbox(config, mockBridges);
       expect(sandbox).toBeDefined();
     });
+
+    it('throws on unknown backend', () => {
+      const config = {
+        backend: 'invalid-backend' as SandboxBackend,
+        timeout: 30000,
+        maxOutputLength: 50000,
+      };
+
+      expect(() => createSandbox(config, mockBridges)).toThrow(/unknown backend/i);
+    });
   });
 });

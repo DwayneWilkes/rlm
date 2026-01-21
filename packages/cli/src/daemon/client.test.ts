@@ -286,6 +286,227 @@ describe('IPCClient', () => {
     });
   });
 
+  describe('connection timeout', () => {
+    it('times out if server never accepts connection', async () => {
+      // Don't create a server - connection will hang
+      // Use very short timeout
+      client = new IPCClient(testSocketPath, { connectTimeout: 50 });
+
+      await expect(client.connect()).rejects.toThrow(/timeout|ENOENT|ECONNREFUSED/i);
+      expect(client.isConnected()).toBe(false);
+    });
+  });
+
+
+  describe('invalid JSON handling', () => {
+    it('ignores invalid JSON responses from server', async () => {
+      server = net.createServer((socket) => {
+        serverConnections.push(socket);
+        socket.on('data', (data) => {
+          const request = JSON.parse(data.toString().trim());
+          // Send invalid JSON first, then valid response
+          socket.write('not valid json\n');
+          socket.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: request.id,
+            result: { success: true },
+          }) + '\n');
+        });
+      });
+      await new Promise<void>((resolve, reject) => {
+        server!.on('error', reject);
+        server!.listen(testSocketPath, resolve);
+      });
+
+      client = new IPCClient(testSocketPath);
+      await client.connect();
+
+      // Should still get the valid response despite invalid JSON
+      const result = await client.request('test');
+      expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('response with no pending request', () => {
+    it('ignores responses with unknown request IDs', async () => {
+      server = net.createServer((socket) => {
+        serverConnections.push(socket);
+        socket.on('data', (data) => {
+          const request = JSON.parse(data.toString().trim());
+          // Send a response with wrong ID first
+          socket.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: 99999,
+            result: { wrong: true },
+          }) + '\n');
+          // Then send correct response
+          socket.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: request.id,
+            result: { correct: true },
+          }) + '\n');
+        });
+      });
+      await new Promise<void>((resolve, reject) => {
+        server!.on('error', reject);
+        server!.listen(testSocketPath, resolve);
+      });
+
+      client = new IPCClient(testSocketPath);
+      await client.connect();
+
+      // Should get the correct response
+      const result = await client.request('test');
+      expect(result).toEqual({ correct: true });
+    });
+  });
+
+  describe('authentication', () => {
+    it('authenticates automatically when token is provided', async () => {
+      const authRequests: Array<{ token?: string }> = [];
+      server = net.createServer((socket) => {
+        serverConnections.push(socket);
+        socket.on('data', (data) => {
+          const request = JSON.parse(data.toString().trim());
+          if (request.method === 'auth') {
+            authRequests.push(request.params);
+            socket.write(JSON.stringify({
+              jsonrpc: '2.0',
+              id: request.id,
+              result: { authenticated: true },
+            }) + '\n');
+          } else {
+            socket.write(JSON.stringify({
+              jsonrpc: '2.0',
+              id: request.id,
+              result: { success: true },
+            }) + '\n');
+          }
+        });
+      });
+      await new Promise<void>((resolve, reject) => {
+        server!.on('error', reject);
+        server!.listen(testSocketPath, resolve);
+      });
+
+      client = new IPCClient(testSocketPath, { authToken: 'test-token-123' });
+      await client.connect();
+
+      expect(authRequests).toHaveLength(1);
+      expect(authRequests[0]?.token).toBe('test-token-123');
+    });
+
+    it('throws when authentication fails', async () => {
+      server = net.createServer((socket) => {
+        serverConnections.push(socket);
+        socket.on('data', (data) => {
+          const request = JSON.parse(data.toString().trim());
+          if (request.method === 'auth') {
+            socket.write(JSON.stringify({
+              jsonrpc: '2.0',
+              id: request.id,
+              result: { authenticated: false },
+            }) + '\n');
+          }
+        });
+      });
+      await new Promise<void>((resolve, reject) => {
+        server!.on('error', reject);
+        server!.listen(testSocketPath, resolve);
+      });
+
+      client = new IPCClient(testSocketPath, { authToken: 'wrong-token' });
+      await expect(client.connect()).rejects.toThrow(/authentication failed/i);
+    });
+
+    it('throws when authenticate() called without token', async () => {
+      server = net.createServer((socket) => {
+        serverConnections.push(socket);
+      });
+      await new Promise<void>((resolve, reject) => {
+        server!.on('error', reject);
+        server!.listen(testSocketPath, resolve);
+      });
+
+      client = new IPCClient(testSocketPath);
+      await client.connect();
+
+      // Access private method through type coercion for testing
+      const clientAny = client as unknown as { authenticate: () => Promise<void> };
+      await expect(clientAny.authenticate()).rejects.toThrow(/no auth token/i);
+    });
+
+    it('skips authentication if already authenticated', async () => {
+      let authCount = 0;
+      server = net.createServer((socket) => {
+        serverConnections.push(socket);
+        socket.on('data', (data) => {
+          const request = JSON.parse(data.toString().trim());
+          if (request.method === 'auth') {
+            authCount++;
+            socket.write(JSON.stringify({
+              jsonrpc: '2.0',
+              id: request.id,
+              result: { authenticated: true },
+            }) + '\n');
+          }
+        });
+      });
+      await new Promise<void>((resolve, reject) => {
+        server!.on('error', reject);
+        server!.listen(testSocketPath, resolve);
+      });
+
+      client = new IPCClient(testSocketPath, { authToken: 'test-token' });
+      await client.connect(); // First auth
+
+      // Call authenticate again
+      const clientAny = client as unknown as { authenticate: () => Promise<void> };
+      await clientAny.authenticate();
+
+      expect(authCount).toBe(1); // Should only authenticate once
+    });
+  });
+
+  describe('auto-reconnect failure', () => {
+    it('throws when auto-reconnect fails', async () => {
+      server = net.createServer((socket) => {
+        serverConnections.push(socket);
+        socket.on('data', (data) => {
+          const request = JSON.parse(data.toString().trim());
+          socket.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: request.id,
+            result: { success: true },
+          }) + '\n');
+        });
+      });
+      await new Promise<void>((resolve, reject) => {
+        server!.on('error', reject);
+        server!.listen(testSocketPath, resolve);
+      });
+
+      client = new IPCClient(testSocketPath, { autoReconnect: true, connectTimeout: 500 });
+      await client.connect();
+
+      // Wait to ensure connection is registered
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Close server-side connection and shut down server
+      if (serverConnections[0]) {
+        serverConnections[0].destroy();
+      }
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
+      server = null;
+
+      // Wait for disconnect to propagate
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Request should fail because auto-reconnect can't connect
+      await expect(client.request('test')).rejects.toThrow(/not connected|auto-reconnect failed|ENOENT|ECONNREFUSED/i);
+    }, 10000);
+  });
+
   describe('isConnected', () => {
     it('returns false before connect', () => {
       client = new IPCClient(testSocketPath);

@@ -284,4 +284,27 @@ describe('RLM', () => {
       expect(result.usage).toHaveProperty('maxDepthReached');
     });
   });
+
+  describe('execute with real executor', () => {
+    it('should execute with real executor when available', async () => {
+      // This test verifies that the execute method delegates to Executor
+      // when it's available. The mocks set up at file level handle pyodide.
+      const rlm = new RLM({
+        provider: 'ollama',
+        model: 'llama3.2',
+      });
+
+      // Execute should work because Executor exists
+      const result = await rlm.execute({
+        task: 'Test task',
+        context: 'Test context',
+      });
+
+      // Result comes from real Executor (which gets mocked sandbox)
+      expect(result).toHaveProperty('success');
+      expect(result).toHaveProperty('output');
+      expect(result).toHaveProperty('trace');
+      expect(result).toHaveProperty('usage');
+    });
+  });
 });

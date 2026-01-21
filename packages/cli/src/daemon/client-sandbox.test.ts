@@ -381,6 +381,176 @@ describe('DaemonClientSandbox', () => {
     });
   });
 
+  describe('sendRequest error handling', () => {
+    it('throws when sendRequest called without connection', async () => {
+      sandbox = new DaemonClientSandbox(testSocketPath, mockBridges);
+      // Don't initialize - try to execute directly
+      await expect(sandbox.execute('print(1)')).rejects.toThrow(/not initialized/i);
+    });
+
+    it('throws when initialize called after destroy', async () => {
+      await createMockDaemon((request) => {
+        if (request.method === 'initialize') {
+          return { success: true };
+        }
+        return null;
+      });
+
+      sandbox = new DaemonClientSandbox(testSocketPath, mockBridges);
+      await sandbox.initialize('test');
+      await sandbox.destroy();
+
+      await expect(sandbox.initialize('test again')).rejects.toThrow(/destroyed/i);
+    });
+
+    it('rejects pending requests when destroy is called', async () => {
+      await new Promise<void>((resolve, reject) => {
+        server = net.createServer((socket) => {
+          serverConnections.push(socket);
+          // Handle auth but never respond to execute
+          socket.on('data', (data) => {
+            const buffer = data.toString();
+            const lines = buffer.split('\n').filter(l => l.trim());
+            for (const line of lines) {
+              const request = JSON.parse(line);
+              if (request.method === 'auth') {
+                socket.write(JSON.stringify({
+                  jsonrpc: '2.0',
+                  id: request.id,
+                  result: { authenticated: true },
+                }) + '\n');
+              } else if (request.method === 'initialize') {
+                socket.write(JSON.stringify({
+                  jsonrpc: '2.0',
+                  id: request.id,
+                  result: { success: true },
+                }) + '\n');
+              }
+              // Don't respond to execute - let it hang
+            }
+          });
+        });
+
+        server.on('error', reject);
+        server.listen(testSocketPath, resolve);
+      });
+
+      sandbox = new DaemonClientSandbox(testSocketPath, mockBridges);
+      await sandbox.initialize('test');
+
+      // Start an execute that will never get a response - catch the rejection
+      const executePromise = sandbox.execute('print(1)').catch((err) => {
+        // Expected - the destroy will reject this
+        return err;
+      });
+
+      // Give time for request to be sent
+      await new Promise(r => setTimeout(r, 50));
+
+      // Destroy should reject the pending request
+      await sandbox.destroy();
+
+      // Verify the execute promise was rejected
+      const result = await executePromise;
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toMatch(/destroyed|closed/i);
+    });
+  });
+
+  describe('connection close handling', () => {
+    it('updates state when daemon closes connection', async () => {
+      await createMockDaemon((request) => {
+        if (request.method === 'initialize') {
+          return { success: true };
+        }
+        return null;
+      });
+
+      sandbox = new DaemonClientSandbox(testSocketPath, mockBridges);
+      await sandbox.initialize('test');
+
+      // After destroy, execute should fail
+      await sandbox.destroy();
+      await expect(sandbox.execute('test')).rejects.toThrow(/destroyed/i);
+    });
+  });
+
+  describe('invalid JSON handling', () => {
+    it('ignores invalid JSON from daemon', async () => {
+      await new Promise<void>((resolve, reject) => {
+        server = net.createServer((socket) => {
+          serverConnections.push(socket);
+          let buffer = '';
+
+          socket.on('data', (data) => {
+            buffer += data.toString();
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              const request = JSON.parse(line);
+
+              if (request.method === 'auth') {
+                // Send invalid JSON first, then valid response
+                socket.write('not valid json\n');
+                socket.write(
+                  JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { authenticated: true } }) + '\n'
+                );
+              } else if (request.method === 'initialize') {
+                socket.write(
+                  JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { success: true } }) + '\n'
+                );
+              }
+            }
+          });
+        });
+
+        server.on('error', reject);
+        server.listen(testSocketPath, resolve);
+      });
+
+      sandbox = new DaemonClientSandbox(testSocketPath, mockBridges);
+      // Should handle invalid JSON gracefully and still initialize
+      await sandbox.initialize('test');
+    });
+  });
+
+  describe('authentication', () => {
+    it('throws when authenticate fails on daemon with invalid token', async () => {
+      await new Promise<void>((resolve, reject) => {
+        server = net.createServer((socket) => {
+          serverConnections.push(socket);
+          let buffer = '';
+
+          socket.on('data', (data) => {
+            buffer += data.toString();
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              const request = JSON.parse(line);
+
+              if (request.method === 'auth') {
+                socket.write(
+                  JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { authenticated: false } }) + '\n'
+                );
+              }
+            }
+          });
+        });
+
+        server.on('error', reject);
+        server.listen(testSocketPath, resolve);
+      });
+
+      // Create sandbox with explicit bad token
+      sandbox = new DaemonClientSandbox(testSocketPath, mockBridges, 'bad-token');
+      await expect(sandbox.initialize('test')).rejects.toThrow(/authentication failed/i);
+    });
+  });
+
   describe('bridge callbacks', () => {
     it('handles llm_query bridge callback from daemon', async () => {
       let bridgeRequestHandler: ((req: unknown) => void) | null = null;

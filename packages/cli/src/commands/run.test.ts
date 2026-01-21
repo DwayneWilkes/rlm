@@ -32,7 +32,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 vi.mock('../utils/index.js', () => ({
-  validateFilePathOrThrow: vi.fn((path: string) => ({ resolvedPath: path })),
+  validateFilePathOrThrow: vi.fn((path: string) => ({ resolvedPath: path, warning: undefined })),
 }));
 
 import { loadConfig, mergeConfig } from '../config/index.js';
@@ -40,6 +40,7 @@ import { createSandbox, detectBestBackend } from '../sandbox/index.js';
 import { createFormatter } from '../output/index.js';
 import { RLM } from '@rlm/core';
 import { readFile } from 'node:fs/promises';
+import { validateFilePathOrThrow } from '../utils/index.js';
 
 const mockLoadConfig = vi.mocked(loadConfig);
 const mockMergeConfig = vi.mocked(mergeConfig);
@@ -48,6 +49,7 @@ const mockDetectBestBackend = vi.mocked(detectBestBackend);
 const mockCreateFormatter = vi.mocked(createFormatter);
 const mockRLM = vi.mocked(RLM);
 const mockReadFile = vi.mocked(readFile);
+const mockValidateFilePath = vi.mocked(validateFilePathOrThrow);
 
 describe('createRunCommand', () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -289,6 +291,42 @@ describe('createRunCommand', () => {
 
       // Auto is the default, so detectBestBackend should be called
       expect(mockDetectBestBackend).toHaveBeenCalled();
+    });
+
+    it('should log warning from path validation', async () => {
+      // Configure mock to return a warning
+      mockValidateFilePath.mockReturnValueOnce({
+        resolvedPath: '/path/to/file.txt',
+        warning: 'Path contains symlinks',
+      } as any);
+
+      mockReadFile.mockResolvedValueOnce('file content');
+      mockExecute.mockResolvedValueOnce({
+        success: true,
+        output: 'Done',
+        trace: {},
+        usage: {},
+        warnings: [],
+      });
+
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const program = new Command().addCommand(createRunCommand());
+      await program.parseAsync(['run', 'Task', '--context', '/path/to/file.txt'], { from: 'user' });
+
+      expect(consoleWarnSpy).toHaveBeenCalledWith('Path contains symlinks');
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('should handle non-Error exceptions', async () => {
+      // Throw a string instead of Error
+      mockLoadConfig.mockRejectedValueOnce('String error message');
+
+      const program = new Command().addCommand(createRunCommand());
+      await program.parseAsync(['run', 'Task'], { from: 'user' });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Unexpected error: String error message');
+      expect(processExitSpy).toHaveBeenCalledWith(1);
     });
   });
 });
