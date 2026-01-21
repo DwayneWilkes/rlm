@@ -306,23 +306,36 @@ ENVIRONMENT:
 - \`rlm_query(task, ctx?)\`: Spawn a sub-RLM for complex sub-tasks (PREFERRED for multi-step reasoning)
 - \`chunk_text(text, size, overlap)\`: Split text into chunks
 - \`search_context(pattern, window)\`: Regex search with context
+- \`count_matches(pattern)\`: Fast count of regex matches
+- \`extract_json(text)\`: Safely extract JSON from text
+- \`extract_sections(pattern)\`: Extract sections by header pattern
 
 BUDGET:
 - Remaining: $${remaining.cost.toFixed(2)} | ${remaining.iterations} iterations | depth ${this.depth}/${budget.getRemaining().depth + this.depth}
 
 EXECUTION:
-Write Python in \`\`\`repl blocks:
+Write Python in \`\`\`repl blocks. Multiple blocks in one response execute sequentially and share state - this is MORE EFFICIENT than multiple iterations.
+
 \`\`\`repl
+# Batch multiple operations in one response (1 LLM call)
 print(len(context))
 results = search_context("important", window=100)
-print(results[:3])
+for r in results[:5]:
+    print(r['match'], r['start'])
+\`\`\`
+
+\`\`\`repl
+# Build on previous results
+summary = f"Found {len(results)} matches"
+print(summary)
 \`\`\`
 
 STRATEGY:
 1. First examine context structure (print samples, check length)
-2. For complex sub-tasks, use rlm_query() - it has its own REPL
-3. Build answers incrementally in variables
-4. Be budget-conscious: batch operations
+2. Batch multiple operations in one response when possible
+3. Use count_matches() before full search to estimate scope
+4. For complex sub-tasks, use rlm_query() - it has its own REPL
+5. Build answers incrementally in variables
 
 TERMINATION (use when ready):
 - FINAL(your answer here) - Direct answer

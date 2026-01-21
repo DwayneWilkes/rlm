@@ -300,6 +300,104 @@ async function evaluateExpression(expr: string): Promise<unknown> {
     return results;
   }
 
+  // count_matches call
+  const countMatchesMatch = expr.match(/^count_matches\((?:r)?"([^"]+)"\)$/);
+  if (countMatchesMatch) {
+    const pattern = countMatchesMatch[1].replace(/\\\\d/g, '\\d');
+    const context = pythonState.context;
+    const regex = new RegExp(pattern, 'gi');
+    const matches = context.match(regex);
+    return matches ? matches.length : 0;
+  }
+
+  // extract_json call - handles both variable and string literal
+  const extractJsonVarMatch = expr.match(/^extract_json\((\w+)\)$/);
+  const extractJsonStrMatch = expr.match(/^extract_json\("([^"]+)"\)$/);
+  if (extractJsonVarMatch || extractJsonStrMatch) {
+    let text: string;
+    if (extractJsonStrMatch) {
+      text = extractJsonStrMatch[1];
+    } else if (extractJsonVarMatch) {
+      text = extractJsonVarMatch[1] === 'context'
+        ? pythonState.context
+        : String(pythonState.variables.get(extractJsonVarMatch[1]) ?? '');
+    } else {
+      text = '';
+    }
+    // Find JSON object or array in text
+    const jsonObjMatch = text.match(/\{[\s\S]*\}/);
+    const jsonArrMatch = text.match(/\[[\s\S]*\]/);
+    const jsonStr = jsonObjMatch?.[0] || jsonArrMatch?.[0];
+    if (jsonStr) {
+      try {
+        return JSON.parse(jsonStr);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // "data is None" check - returns Python-style boolean string
+  const isNoneMatch = expr.match(/^(\w+) is None$/);
+  if (isNoneMatch) {
+    const val = pythonState.variables.get(isNoneMatch[1]);
+    return (val === null || val === undefined) ? 'True' : 'False';
+  }
+
+  // Dict/object access like data['key'] or data['outer']['inner']
+  const dictAccessMatch = expr.match(/^(\w+)(\[['"][\w]+['"]\])+$/);
+  if (dictAccessMatch) {
+    let obj = pythonState.variables.get(dictAccessMatch[1]) as Record<string, unknown>;
+    if (!obj) return undefined;
+
+    // Extract all keys from brackets
+    const keys = [...expr.matchAll(/\[['"](\w+)['"]\]/g)].map(m => m[1]);
+    for (const key of keys) {
+      if (obj && typeof obj === 'object' && key in obj) {
+        obj = obj[key] as Record<string, unknown>;
+      } else {
+        return undefined;
+      }
+    }
+    return obj;
+  }
+
+  // len(expr) > 0 comparison
+  const lenCompareMatch = expr.match(/^len\((\w+)(?:\[['"](\w+)['"]\])?\) > (\d+)$/);
+  if (lenCompareMatch) {
+    let val = pythonState.variables.get(lenCompareMatch[1]) as Record<string, unknown> | unknown[];
+    if (lenCompareMatch[2] && val && typeof val === 'object') {
+      val = (val as Record<string, unknown>)[lenCompareMatch[2]] as unknown[];
+    }
+    const threshold = parseInt(lenCompareMatch[3], 10);
+    if (typeof val === 'string' || Array.isArray(val)) {
+      return val.length > threshold ? 'True' : 'False';
+    }
+    return 'False';
+  }
+
+  // extract_sections call
+  const extractSectionsMatch = expr.match(/^extract_sections\(r"([^"]+)"\)$/);
+  if (extractSectionsMatch) {
+    const pattern = extractSectionsMatch[1];
+    const context = pythonState.context;
+    const regex = new RegExp(pattern, 'gm');
+    const sections: Array<{ header: string; content: string; start: number }> = [];
+
+    const matches = [...context.matchAll(regex)];
+    for (let i = 0; i < matches.length; i++) {
+      const match = matches[i];
+      const nextMatch = matches[i + 1];
+      const start = match.index!;
+      const end = nextMatch ? nextMatch.index! : context.length;
+      const header = match[0];
+      const content = context.slice(start + header.length, end).trim();
+      sections.push({ header, content, start });
+    }
+    return sections;
+  }
+
   // Array access like chunks[0], results[0]['match']
   const arrayAccess = expr.match(/^(\w+)\[(\d+)\](?:\['(\w+)'\])?(?:\[:(\d+)\])?$/);
   if (arrayAccess) {
@@ -315,17 +413,17 @@ async function evaluateExpression(expr: string): Promise<unknown> {
     return elem;
   }
 
-  // 'context' in results[0]
+  // 'content' in results[0] - returns Python-style boolean
   if (expr.includes(" in ")) {
     const inMatch = expr.match(/'(\w+)' in (\w+)\[(\d+)\]/);
     if (inMatch) {
       const arr = pythonState.variables.get(inMatch[2]) as unknown[];
       if (arr && arr[parseInt(inMatch[3], 10)]) {
         const elem = arr[parseInt(inMatch[3], 10)] as Record<string, unknown>;
-        return inMatch[1] in elem;
+        return (inMatch[1] in elem) ? 'True' : 'False';
       }
     }
-    return false;
+    return 'False';
   }
 
   return expr;
@@ -870,7 +968,7 @@ print('context' in results[0])
         expect(result.error).toBeUndefined();
         expect(result.stdout).toContain('1');
         expect(result.stdout).toContain('fox');
-        expect(result.stdout).toContain('true');
+        expect(result.stdout).toContain('True');
 
         await testSandbox.destroy();
       });

@@ -129,6 +129,105 @@ def search_context(pattern: str, window: int = 200, max_results: int = 100) -> l
         })
     return results
 
+def count_matches(pattern: str) -> int:
+    """
+    Count regex matches in context without building full results list.
+
+    More memory-efficient than search_context when you only need the count.
+
+    Args:
+        pattern: Regex pattern to search for
+
+    Returns:
+        Number of matches found
+
+    Raises:
+        ValueError: If pattern is too long or invalid
+    """
+    MAX_PATTERN_LENGTH = 500
+    if len(pattern) > MAX_PATTERN_LENGTH:
+        raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+    try:
+        compiled = re.compile(pattern, re.IGNORECASE)
+    except re.error as e:
+        raise ValueError(f"Invalid regex pattern: {e}")
+
+    return len(compiled.findall(context))
+
+def extract_json(text: str):
+    """
+    Safely extract JSON object or array from text.
+
+    Finds the first valid JSON structure in the text and parses it.
+
+    Args:
+        text: Text that may contain JSON
+
+    Returns:
+        Parsed JSON as dict or list, or None if no valid JSON found
+    """
+    # Try to find JSON object
+    obj_match = re.search(r'\\{[\\s\\S]*\\}', text)
+    arr_match = re.search(r'\\[[\\s\\S]*\\]', text)
+
+    candidates = []
+    if obj_match:
+        candidates.append(obj_match.group())
+    if arr_match:
+        candidates.append(arr_match.group())
+
+    # Try each candidate, longest first (more likely to be complete)
+    candidates.sort(key=len, reverse=True)
+
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+
+    return None
+
+def extract_sections(header_pattern: str) -> list:
+    """
+    Extract sections from context based on header pattern.
+
+    Splits the context into sections where each section starts with
+    a line matching the header pattern.
+
+    Args:
+        header_pattern: Regex pattern for section headers (use MULTILINE anchors)
+
+    Returns:
+        List of dicts with 'header', 'content', and 'start' keys
+    """
+    MAX_PATTERN_LENGTH = 500
+    if len(header_pattern) > MAX_PATTERN_LENGTH:
+        raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+    try:
+        compiled = re.compile(header_pattern, re.MULTILINE)
+    except re.error as e:
+        raise ValueError(f"Invalid regex pattern: {e}")
+
+    matches = list(compiled.finditer(context))
+    sections = []
+
+    for i, match in enumerate(matches):
+        header = match.group()
+        start = match.start()
+        # Content ends at next header or end of context
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(context)
+        content = context[match.end():end].strip()
+
+        sections.append({
+            'header': header,
+            'content': content,
+            'start': start
+        })
+
+    return sections
+
 print(f"RLM sandbox ready. Context: {len(context):,} chars")
 `;
 
@@ -238,6 +337,105 @@ def search_context(pattern: str, window: int = 200, max_results: int = 100) -> l
             'context': context[start:end]
         })
     return results
+
+def count_matches(pattern: str) -> int:
+    """
+    Count regex matches in context without building full results list.
+
+    More memory-efficient than search_context when you only need the count.
+
+    Args:
+        pattern: Regex pattern to search for
+
+    Returns:
+        Number of matches found
+
+    Raises:
+        ValueError: If pattern is too long or invalid
+    """
+    MAX_PATTERN_LENGTH = 500
+    if len(pattern) > MAX_PATTERN_LENGTH:
+        raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+    try:
+        compiled = re.compile(pattern, re.IGNORECASE)
+    except re.error as e:
+        raise ValueError(f"Invalid regex pattern: {e}")
+
+    return len(compiled.findall(context))
+
+def extract_json(text: str):
+    """
+    Safely extract JSON object or array from text.
+
+    Finds the first valid JSON structure in the text and parses it.
+
+    Args:
+        text: Text that may contain JSON
+
+    Returns:
+        Parsed JSON as dict or list, or None if no valid JSON found
+    """
+    # Try to find JSON object
+    obj_match = re.search(r'\\{[\\s\\S]*\\}', text)
+    arr_match = re.search(r'\\[[\\s\\S]*\\]', text)
+
+    candidates = []
+    if obj_match:
+        candidates.append(obj_match.group())
+    if arr_match:
+        candidates.append(arr_match.group())
+
+    # Try each candidate, longest first (more likely to be complete)
+    candidates.sort(key=len, reverse=True)
+
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+
+    return None
+
+def extract_sections(header_pattern: str) -> list:
+    """
+    Extract sections from context based on header pattern.
+
+    Splits the context into sections where each section starts with
+    a line matching the header pattern.
+
+    Args:
+        header_pattern: Regex pattern for section headers (use MULTILINE anchors)
+
+    Returns:
+        List of dicts with 'header', 'content', and 'start' keys
+    """
+    MAX_PATTERN_LENGTH = 500
+    if len(header_pattern) > MAX_PATTERN_LENGTH:
+        raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+    try:
+        compiled = re.compile(header_pattern, re.MULTILINE)
+    except re.error as e:
+        raise ValueError(f"Invalid regex pattern: {e}")
+
+    matches = list(compiled.finditer(context))
+    sections = []
+
+    for i, match in enumerate(matches):
+        header = match.group()
+        start = match.start()
+        # Content ends at next header or end of context
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(context)
+        content = context[match.end():end].strip()
+
+        sections.append({
+            'header': header,
+            'content': content,
+            'start': start
+        })
+
+    return sections
 
 print(f"RLM sandbox ready. Context: {len(context):,} chars")
 `;
