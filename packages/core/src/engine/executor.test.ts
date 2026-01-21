@@ -268,6 +268,65 @@ describe('Executor', () => {
       expect(executor).toBeDefined();
     });
 
+    it('should fall back to directAnswer when budget blocks subcalls', async () => {
+      // Capture the bridges passed to createSandbox
+      let capturedBridges: { onRLMQuery: (task: string, ctx?: string) => Promise<string> } | null = null;
+
+      const mockSandboxWithBridgeCapture: Sandbox = {
+        initialize: vi.fn().mockResolvedValue(undefined),
+        execute: vi.fn().mockImplementation(async (code: string) => {
+          // When code calls rlm_query, invoke the captured bridge
+          if (code.includes('rlm_query') && capturedBridges) {
+            const result = await capturedBridges.onRLMQuery('sub task', 'sub context');
+            return {
+              code,
+              stdout: result,
+              stderr: '',
+              duration: 10,
+            };
+          }
+          return {
+            code,
+            stdout: 'Mock output',
+            stderr: '',
+            duration: 10,
+          };
+        }),
+        getVariable: vi.fn().mockResolvedValue(undefined),
+        destroy: vi.fn().mockResolvedValue(undefined),
+      };
+
+      // Override createSandbox to capture bridges
+      const { createSandbox } = await import('../repl/sandbox.js');
+      vi.mocked(createSandbox).mockImplementationOnce((config, bridges) => {
+        capturedBridges = bridges as typeof capturedBridges;
+        return mockSandboxWithBridgeCapture;
+      });
+
+      // Adapter responses: first triggers rlm_query, second provides FINAL
+      const adapter = createMockAdapter([
+        { content: '```repl\nresult = rlm_query("sub task", "sub context")\nprint(result)\n```' },
+        { content: 'FINAL(Done with direct answer)' },
+      ]);
+      router.register('test', adapter);
+
+      const executor = new Executor(config, router);
+      const result = await executor.execute({
+        task: 'Main task',
+        context: 'Main context',
+        budget: { maxDepth: 0 }, // Block all subcalls
+      });
+
+      expect(result.success).toBe(true);
+      // The directAnswer should have been called because maxDepth: 0 blocks subcalls
+      // Verify the adapter was called with a direct answer prompt (from directAnswer method)
+      const calls = (adapter.complete as ReturnType<typeof vi.fn>).mock.calls;
+      const directAnswerCall = calls.find(
+        (call) => call[0].systemPrompt?.includes('Answer concisely')
+      );
+      expect(directAnswerCall).toBeDefined();
+    });
+
     it('should respect maxDepth for subcalls', async () => {
       const executor = new Executor(config, router, 2); // depth=2
       const result = await executor.execute({
@@ -463,6 +522,42 @@ describe('Executor', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
       expect(result.error?.message).toContain('LLM API error');
+    });
+
+    it('should include error output in conversation context', async () => {
+      // Create a mock sandbox that returns an error for code execution
+      const mockSandboxWithError: Sandbox = {
+        initialize: vi.fn().mockResolvedValue(undefined),
+        execute: vi.fn().mockResolvedValue({
+          code: 'raise Exception("test error")',
+          stdout: '',
+          stderr: '',
+          error: 'Exception: test error',
+          duration: 10,
+        }),
+        getVariable: vi.fn().mockResolvedValue(undefined),
+        destroy: vi.fn().mockResolvedValue(undefined),
+      };
+
+      // Override the createSandbox mock for this test
+      const { createSandbox } = await import('../repl/sandbox.js');
+      vi.mocked(createSandbox).mockReturnValueOnce(mockSandboxWithError);
+
+      const adapter = createMockAdapter([
+        { content: '```repl\nraise Exception("test error")\n```\n\nContinuing after error.' },
+        { content: 'FINAL(Handled the error)' },
+      ]);
+      router.register('test', adapter);
+
+      const executor = new Executor(config, router);
+      const result = await executor.execute({
+        task: 'Task with error',
+        context: 'Context',
+      });
+
+      expect(result.success).toBe(true);
+      // Verify that the error was captured in the execution
+      expect(result.trace.iterations[0].codeExecutions[0].error).toBe('Exception: test error');
     });
 
     it('should cleanup sandbox on error', async () => {

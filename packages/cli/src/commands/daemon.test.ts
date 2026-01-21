@@ -259,6 +259,37 @@ describe('createDaemonCommand', () => {
       expect(consoleLogSpy).toHaveBeenCalledWith('Daemon stopped');
     });
 
+    it('cleans up PID file when process is not running but PID file exists', async () => {
+      vi.mocked(readPID).mockReturnValue(12345);
+      vi.mocked(isProcessRunning).mockReturnValue(false); // Process not running
+
+      const program = new Command().addCommand(createDaemonCommand());
+      await program.parseAsync(['daemon', 'stop'], { from: 'user' });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('not running')
+      );
+      expect(cleanupPID).toHaveBeenCalled();
+    });
+
+    it('handles kill throwing an error gracefully', async () => {
+      vi.mocked(readPID).mockReturnValue(12345);
+      vi.mocked(isProcessRunning).mockReturnValue(true);
+
+      // Simulate kill throwing ESRCH (no such process)
+      process.kill = vi.fn().mockImplementation(() => {
+        throw new Error('ESRCH');
+      }) as any;
+
+      const program = new Command().addCommand(createDaemonCommand());
+      await program.parseAsync(['daemon', 'stop'], { from: 'user' });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('not running')
+      );
+      expect(cleanupPID).toHaveBeenCalled();
+    });
+
     it('force kills with SIGKILL after 5s timeout', async () => {
       vi.useFakeTimers();
 
@@ -366,6 +397,70 @@ describe('createDaemonCommand', () => {
       // Should show uptime in human-readable format
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringMatching(/Uptime.*1.*hour/i)
+      );
+    });
+
+    it('shows uptime in days for long-running daemon', async () => {
+      vi.mocked(readPID).mockReturnValue(12345);
+      vi.mocked(isDaemonRunning).mockResolvedValue(true);
+      vi.mocked(pingDaemon).mockResolvedValue({
+        uptime: 90000000, // 1 day 1 hour
+        workers: 2,
+      });
+
+      const program = new Command().addCommand(createDaemonCommand());
+      await program.parseAsync(['daemon', 'status'], { from: 'user' });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/Uptime.*1.*day/i)
+      );
+    });
+
+    it('shows uptime in seconds for very short uptime', async () => {
+      vi.mocked(readPID).mockReturnValue(12345);
+      vi.mocked(isDaemonRunning).mockResolvedValue(true);
+      vi.mocked(pingDaemon).mockResolvedValue({
+        uptime: 45000, // 45 seconds
+        workers: 2,
+      });
+
+      const program = new Command().addCommand(createDaemonCommand());
+      await program.parseAsync(['daemon', 'status'], { from: 'user' });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/Uptime.*45.*second/i)
+      );
+    });
+
+    it('shows uptime in minutes for medium uptime', async () => {
+      vi.mocked(readPID).mockReturnValue(12345);
+      vi.mocked(isDaemonRunning).mockResolvedValue(true);
+      vi.mocked(pingDaemon).mockResolvedValue({
+        uptime: 300000, // 5 minutes
+        workers: 2,
+      });
+
+      const program = new Command().addCommand(createDaemonCommand());
+      await program.parseAsync(['daemon', 'status'], { from: 'user' });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/Uptime.*5.*minute/i)
+      );
+    });
+
+    it('shows plural forms correctly (2 days, 2 hours)', async () => {
+      vi.mocked(readPID).mockReturnValue(12345);
+      vi.mocked(isDaemonRunning).mockResolvedValue(true);
+      vi.mocked(pingDaemon).mockResolvedValue({
+        uptime: 180000000, // 2 days 2 hours
+        workers: 2,
+      });
+
+      const program = new Command().addCommand(createDaemonCommand());
+      await program.parseAsync(['daemon', 'status'], { from: 'user' });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/Uptime.*2.*days/i)
       );
     });
 

@@ -134,6 +134,33 @@ describe('RLM', () => {
       expect(router.getAdapter('anthropic')).toBeUndefined();
       expect(router.getAdapter('ollama')).toBeDefined();
     });
+
+    it('should register claude-code adapter when provider is claude-code', () => {
+      const rlm = new RLM({
+        provider: 'claude-code',
+        model: 'claude-sonnet-4-20250514',
+        // No apiKey needed - uses subscription auth
+      });
+
+      const router = (rlm as unknown as { router: { getAdapter: (p: string) => unknown } }).router;
+      expect(router.getAdapter('claude-code')).toBeDefined();
+      expect(router.getAdapter('ollama')).toBeDefined(); // Always registered
+    });
+
+    it('should pass claudeCode options to claude-code adapter', () => {
+      const rlm = new RLM({
+        provider: 'claude-code',
+        model: 'claude-sonnet-4-20250514',
+        providerOptions: {
+          claudeCode: {
+            permissions: { allowedTools: ['computer'] },
+          },
+        },
+      });
+
+      const router = (rlm as unknown as { router: { getAdapter: (p: string) => unknown } }).router;
+      expect(router.getAdapter('claude-code')).toBeDefined();
+    });
   });
 
   describe('execute method', () => {
