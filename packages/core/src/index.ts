@@ -213,3 +213,20 @@ export { ClaudeCodeAdapter } from './llm/adapters/claude-code.js';
  */
 export { createSandbox } from './repl/sandbox.js';
 export type { Sandbox, SandboxBridges } from './repl/sandbox.js';
+
+/**
+ * Native Python sandbox for high-performance execution.
+ *
+ * Uses native Python subprocess instead of Pyodide WASM for
+ * faster startup and full stdlib support.
+ *
+ * @example
+ * ```typescript
+ * import { NativePythonSandbox, DEFAULT_REPL_CONFIG } from '@rlm/core';
+ * const sandbox = new NativePythonSandbox(DEFAULT_REPL_CONFIG, bridges);
+ * await sandbox.initialize('context');
+ * const result = await sandbox.execute('print(1 + 1)');
+ * await sandbox.destroy();
+ * ```
+ */
+export { NativePythonSandbox } from './repl/native-python.js';

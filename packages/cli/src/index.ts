@@ -39,6 +39,31 @@ export {
   type OutputConfig,
 } from './config/index.js';
 
+// Re-export sandbox utilities
+export {
+  createSandbox,
+  detectBestBackend,
+  isNativeAvailable,
+  isDaemonRunning,
+  type CreateSandboxConfig,
+  type DetectOptions,
+} from './sandbox/index.js';
+
+// Re-export types
+export type { SandboxBackend } from './types/index.js';
+
+// Re-export daemon utilities
+export {
+  WorkerPool,
+  DaemonServer,
+  getDefaultSocketPath,
+  writePID,
+  readPID,
+  cleanupPID,
+  isProcessRunning,
+  type PoolStats,
+} from './daemon/index.js';
+
 /**
  * Main CLI entry point.
  *

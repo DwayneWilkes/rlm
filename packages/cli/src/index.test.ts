@@ -67,6 +67,28 @@ describe('@rlm/cli exports', () => {
     });
   });
 
+  describe('sandbox exports', () => {
+    it('should export createSandbox function', () => {
+      expect(rlmCli.createSandbox).toBeDefined();
+      expect(typeof rlmCli.createSandbox).toBe('function');
+    });
+
+    it('should export detectBestBackend function', () => {
+      expect(rlmCli.detectBestBackend).toBeDefined();
+      expect(typeof rlmCli.detectBestBackend).toBe('function');
+    });
+
+    it('should export isNativeAvailable function', () => {
+      expect(rlmCli.isNativeAvailable).toBeDefined();
+      expect(typeof rlmCli.isNativeAvailable).toBe('function');
+    });
+
+    it('should export isDaemonRunning function', () => {
+      expect(rlmCli.isDaemonRunning).toBeDefined();
+      expect(typeof rlmCli.isDaemonRunning).toBe('function');
+    });
+  });
+
   describe('workspace integration', () => {
     it('should be able to import @rlm/core', async () => {
       // Verify that the CLI package can access the core package via workspace
