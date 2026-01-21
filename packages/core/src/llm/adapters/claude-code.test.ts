@@ -41,7 +41,7 @@ describe('ClaudeCodeAdapter', () => {
       const mockIterator = {
         async *[Symbol.asyncIterator]() {
           yield { result: 'Test response' };
-          yield { usage: { inputTokens: 100, outputTokens: 50 } };
+          yield { usage: { input_tokens: 100, output_tokens: 50 } };
         },
       };
       mockQuery.mockReturnValue(mockIterator);
@@ -107,8 +107,8 @@ describe('ClaudeCodeAdapter', () => {
     it('should accumulate token counts from usage messages', async () => {
       const mockIterator = {
         async *[Symbol.asyncIterator]() {
-          yield { usage: { inputTokens: 100, outputTokens: 50 } };
-          yield { usage: { inputTokens: 50, outputTokens: 25 } };
+          yield { usage: { input_tokens: 100, output_tokens: 50 } };
+          yield { usage: { input_tokens: 50, output_tokens: 25 } };
           yield { result: 'Response' };
         },
       };
@@ -129,7 +129,7 @@ describe('ClaudeCodeAdapter', () => {
       const mockIterator = {
         async *[Symbol.asyncIterator]() {
           yield { result: 'Response' };
-          yield { usage: { inputTokens: 1000, outputTokens: 1000 } };
+          yield { usage: { input_tokens: 1000, output_tokens: 1000 } };
         },
       };
       mockQuery.mockReturnValue(mockIterator);
@@ -148,7 +148,7 @@ describe('ClaudeCodeAdapter', () => {
     it('should handle empty result gracefully', async () => {
       const mockIterator = {
         async *[Symbol.asyncIterator]() {
-          yield { usage: { inputTokens: 10, outputTokens: 5 } };
+          yield { usage: { input_tokens: 10, output_tokens: 5 } };
           // No result message
         },
       };

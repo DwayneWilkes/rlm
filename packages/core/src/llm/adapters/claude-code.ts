@@ -76,16 +76,51 @@ export class ClaudeCodeAdapter implements LLMAdapter {
         allowedTools: this.config.allowedTools ?? [],
       },
     })) {
+      // Check for errors
+      if ('errors' in message && Array.isArray(message.errors) && message.errors.length > 0) {
+        console.error('[ClaudeCodeAdapter] Errors:', JSON.stringify(message.errors, null, 2));
+      }
+
+      // Capture assistant messages - handles Anthropic message format
+      if ('message' in message) {
+        const msg = message.message as {
+          content?: string | Array<{ type: string; text?: string }>;
+          role?: string;
+        };
+        if (msg?.role === 'assistant' && msg?.content) {
+          // Handle content array format (Anthropic message structure)
+          if (Array.isArray(msg.content)) {
+            const textContent = msg.content
+              .filter((block) => block.type === 'text' && block.text)
+              .map((block) => block.text)
+              .join('\n');
+            if (textContent) {
+              result = textContent;
+            }
+          } else if (typeof msg.content === 'string') {
+            result = msg.content;
+          }
+        }
+      }
+
+      // Override with final result if present
       if ('result' in message) {
         result = message.result as string;
       }
+
+      // Accumulate usage - SDK returns snake_case field names
       if ('usage' in message) {
         const usage = message.usage as {
-          inputTokens?: number;
-          outputTokens?: number;
+          input_tokens?: number;
+          output_tokens?: number;
+          cache_creation_input_tokens?: number;
+          cache_read_input_tokens?: number;
         };
-        inputTokens += usage.inputTokens ?? 0;
-        outputTokens += usage.outputTokens ?? 0;
+        // Sum all input token types
+        inputTokens += (usage.input_tokens ?? 0) +
+          (usage.cache_creation_input_tokens ?? 0) +
+          (usage.cache_read_input_tokens ?? 0);
+        outputTokens += usage.output_tokens ?? 0;
       }
     }
 
