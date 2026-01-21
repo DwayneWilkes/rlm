@@ -73,6 +73,9 @@ export class ClaudeCodeAdapter implements LLMAdapter {
       prompt: fullPrompt,
       options: {
         maxTurns: this.config.maxTurns ?? 1,
+        // Disable all built-in tools - RLM needs plain text with code blocks
+        // for its own sandbox execution, not Claude Code's tool usage
+        tools: [],
         allowedTools: this.config.allowedTools ?? [],
       },
     })) {
