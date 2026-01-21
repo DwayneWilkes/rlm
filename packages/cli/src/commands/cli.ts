@@ -27,7 +27,15 @@ import { createDaemonCommand } from './daemon.js';
 export function createCLI(): Command {
   const program = new Command()
     .name('rlm')
-    .description('RLM - Recursive Language Model CLI')
+    .description(
+      'RLM - Recursive Language Model CLI\n\n' +
+        'Execute AI-powered tasks with recursive decomposition and Python REPL.\n\n' +
+        'Examples:\n' +
+        '  $ rlm run "Analyze this codebase"\n' +
+        '  $ rlm run "Summarize the document" --context doc.txt\n' +
+        '  $ rlm config show\n' +
+        '  $ rlm daemon start --workers 4'
+    )
     .version('0.1.0');
 
   // Add subcommands

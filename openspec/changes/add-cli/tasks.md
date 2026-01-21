@@ -146,183 +146,181 @@ Depends on Wave 1 completion.
 
 ---
 
-## Wave 3: CLI Features (Parallel)
+## Wave 3: CLI Features (Parallel) ✅ COMPLETE
 
 Depends on Wave 2 completion.
 
-### Track A: Backend Selection (depends on 2B)
+### Track A: Backend Selection (depends on 2B) ✅
 
 **3A.1 SandboxBackend type**
-- [ ] RED: Write test for SandboxBackend enum values
-- [ ] GREEN: Add type to types/index.ts
-- [ ] REFACTOR: Export from package
+- [x] RED: Write test for SandboxBackend enum values
+- [x] GREEN: Add type to types/index.ts
+- [x] REFACTOR: Export from package
 
 **3A.2 createSandbox() factory**
-- [ ] RED: Write test for factory returning correct sandbox type
-- [ ] GREEN: Implement factory with backend detection
-- [ ] REFACTOR: Add logging for selected backend
+- [x] RED: Write test for factory returning correct sandbox type
+- [x] GREEN: Implement factory with backend detection
+- [x] REFACTOR: Add logging for selected backend
 
 **3A.3 Backend hierarchy**
-- [ ] RED: Write test for daemon → native → pyodide fallback
-- [ ] GREEN: Implement detection chain
-- [ ] REFACTOR: Make hierarchy configurable
+- [x] RED: Write test for daemon → native → pyodide fallback
+- [x] GREEN: Implement detection chain
+- [x] REFACTOR: Make hierarchy configurable
 
 **Track A Complete**
-- [ ] COMMIT: `feat(repl): add sandbox factory with backend selection`
+- [x] Tests: 31 tests in sandbox/detect.test.ts, sandbox/factory.test.ts
 
-### Track B: CLI Commands (depends on 2C, 3A)
+### Track B: CLI Commands (depends on 2C, 3A) ✅
 
 **3B.1 Commander router**
-- [ ] RED: Write test for CLI parsing subcommands
-- [ ] GREEN: Create cli.ts with commander program
-- [ ] REFACTOR: Extract common options
+- [x] RED: Write test for CLI parsing subcommands
+- [x] GREEN: Create cli.ts with commander program
+- [x] REFACTOR: Extract common options
 
 **3B.2 Run command**
-- [ ] RED: Write test for `rlm run` executing task
-- [ ] GREEN: Implement run.ts with context loading
-- [ ] REFACTOR: Add progress callbacks
+- [x] RED: Write test for `rlm run` executing task
+- [x] GREEN: Implement run.ts with context loading
+- [x] REFACTOR: Add progress callbacks
 
 **3B.3 Config command**
-- [ ] RED: Write test for `rlm config show` output
-- [ ] GREEN: Implement config.ts with show/path subcommands
-- [ ] REFACTOR: Format output consistently
+- [x] RED: Write test for `rlm config show` output
+- [x] GREEN: Implement config.ts with show/path subcommands
+- [x] REFACTOR: Format output consistently
 
 **3B.4 Daemon stub**
-- [ ] RED: Write test for daemon commands existing
-- [ ] GREEN: Create daemon.ts with start/stop/status stubs
-- [ ] REFACTOR: Add "not implemented" messages
+- [x] RED: Write test for daemon commands existing
+- [x] GREEN: Create daemon.ts with start/stop/status stubs
+- [x] REFACTOR: Add "not implemented" messages
 
 **Track B Complete**
-- [ ] COMMIT: `feat(cli): implement run, config, and daemon stub commands`
+- [x] Tests: 40 tests in commands/cli.test.ts, commands/run.test.ts, commands/config.test.ts, commands/daemon.test.ts
 
-### Track C: Output Formatters (depends on 2C)
+### Track C: Output Formatters (depends on 2C) ✅
 
 **3C.1 Formatter interface**
-- [ ] RED: Write test for IFormatter interface
-- [ ] GREEN: Create formatter.ts with interface
-- [ ] REFACTOR: Add format detection
+- [x] RED: Write test for IFormatter interface
+- [x] GREEN: Create formatter.ts with interface
+- [x] REFACTOR: Add format detection
 
 **3C.2 Text formatter**
-- [ ] RED: Write test for human-readable output
-- [ ] GREEN: Implement TextFormatter with colors
-- [ ] REFACTOR: Add progress spinner
+- [x] RED: Write test for human-readable output
+- [x] GREEN: Implement TextFormatter with colors
+- [x] REFACTOR: Add progress spinner
 
 **3C.3 JSON formatter**
-- [ ] RED: Write test for valid JSON output
-- [ ] GREEN: Implement JsonFormatter
-- [ ] REFACTOR: Add pretty-print option
+- [x] RED: Write test for valid JSON output
+- [x] GREEN: Implement JsonFormatter
+- [x] REFACTOR: Add pretty-print option
 
 **3C.4 YAML formatter**
-- [ ] RED: Write test for valid YAML output
-- [ ] GREEN: Implement YamlFormatter
-- [ ] REFACTOR: Handle complex types
+- [x] RED: Write test for valid YAML output
+- [x] GREEN: Implement YamlFormatter
+- [x] REFACTOR: Handle complex types
 
 **Track C Complete**
-- [ ] COMMIT: `feat(cli): add output formatters (text, json, yaml)`
+- [x] Tests: 46 tests in output/text.test.ts, output/json.test.ts, output/yaml.test.ts, output/index.test.ts
 
 ---
 
-## Wave 4: Daemon Mode (Parallel)
+## Wave 4: Daemon Mode (Parallel) ✅ COMPLETE
 
 Depends on Wave 3 completion.
 
-### Track A: Daemon Server
+### Track A: Daemon Server ✅
 
 **4A.1 Worker pool manager**
-- [ ] RED: Write test for pool spawning N workers
-- [ ] GREEN: Implement pool with spawn/acquire/release
-- [ ] REFACTOR: Add health checks
+- [x] RED: Write test for pool spawning N workers
+- [x] GREEN: Implement pool with spawn/acquire/release
+- [x] REFACTOR: Add health checks
 
 **4A.2 Unix socket server**
-- [ ] RED: Write test for socket server accepting connections
-- [ ] GREEN: Implement with net.createServer
-- [ ] REFACTOR: Add connection limit
+- [x] RED: Write test for socket server accepting connections
+- [x] GREEN: Implement with net.createServer
+- [x] REFACTOR: Add connection limit
 
 **4A.3 Named pipe server (Windows)**
-- [ ] RED: Write test for pipe server on Windows
-- [ ] GREEN: Implement with \\.\pipe\ path
-- [ ] REFACTOR: Unify with Unix socket code
+- [x] RED: Write test for pipe server on Windows
+- [x] GREEN: Implement with \\.\pipe\ path
+- [x] REFACTOR: Unify with Unix socket code
 
 **4A.4 PID file management**
-- [ ] RED: Write test for PID file creation/cleanup
-- [ ] GREEN: Implement writePID/readPID/cleanupPID
-- [ ] REFACTOR: Add stale detection
+- [x] RED: Write test for PID file creation/cleanup
+- [x] GREEN: Implement writePID/readPID/cleanupPID
+- [x] REFACTOR: Add stale detection
 
 **Track A Complete**
-- [ ] COMMIT: `feat(daemon): add worker pool and IPC server`
+- [x] Tests: 36 tests in daemon/server.test.ts, daemon/pool.test.ts, daemon/pid.test.ts
 
-### Track B: Daemon Client (depends on 2B pattern)
+### Track B: Daemon Client (depends on 2B pattern) ✅
 
 **4B.1 DaemonClientSandbox class**
-- [ ] RED: Write test for DaemonClientSandbox implementing ISandbox
-- [ ] GREEN: Create class delegating to daemon
-- [ ] REFACTOR: Share code with NativePythonSandbox
+- [x] RED: Write test for DaemonClientSandbox implementing ISandbox
+- [x] GREEN: Create class delegating to daemon
+- [x] REFACTOR: Share code with NativePythonSandbox
 
 **4B.2 IPC client**
-- [ ] RED: Write test for IPC request/response
-- [ ] GREEN: Implement socket/pipe connection
-- [ ] REFACTOR: Add reconnection logic
+- [x] RED: Write test for IPC request/response
+- [x] GREEN: Implement socket/pipe connection
+- [x] REFACTOR: Add reconnection logic
 
 **4B.3 Daemon availability detection**
-- [ ] RED: Write test for isDaemonRunning()
-- [ ] GREEN: Implement socket ping
-- [ ] REFACTOR: Add timeout
+- [x] RED: Write test for isDaemonRunning()
+- [x] GREEN: Implement socket ping
+- [x] REFACTOR: Add timeout
 
 **Track B Complete**
-- [ ] COMMIT: `feat(repl): add DaemonClientSandbox with IPC`
+- [x] Tests: 78 tests in daemon/client.test.ts, daemon/client-sandbox.test.ts, daemon/detect.test.ts
 
-### Track C: Daemon Commands (depends on 3B, 4A, 4B)
+### Track C: Daemon Commands (depends on 3B, 4A, 4B) ✅
 
 **4C.1 daemon start**
-- [ ] RED: Write test for daemon start creating PID
-- [ ] GREEN: Implement start with fork/detach
-- [ ] REFACTOR: Add startup verification
+- [x] RED: Write test for daemon start creating PID
+- [x] GREEN: Implement start with fork/detach
+- [x] REFACTOR: Add startup verification
 
 **4C.2 daemon stop**
-- [ ] RED: Write test for daemon stop with cleanup
-- [ ] GREEN: Implement stop with SIGTERM
-- [ ] REFACTOR: Add force kill option
+- [x] RED: Write test for daemon stop with cleanup
+- [x] GREEN: Implement stop with SIGTERM
+- [x] REFACTOR: Add force kill option
 
 **4C.3 daemon status**
-- [ ] RED: Write test for status output format
-- [ ] GREEN: Implement status with uptime/workers
-- [ ] REFACTOR: Add JSON output option
+- [x] RED: Write test for status output format
+- [x] GREEN: Implement status with uptime/workers
+- [x] REFACTOR: Add JSON output option
 
 **4C.4 Backend priority update**
-- [ ] RED: Write test for daemon-first selection
-- [ ] GREEN: Update createSandbox to check daemon
-- [ ] REFACTOR: Log fallback reasons
+- [x] RED: Write test for daemon-first selection
+- [x] GREEN: Update createSandbox to check daemon
+- [x] REFACTOR: Log fallback reasons
 
 **Track C Complete**
-- [ ] COMMIT: `feat(cli): implement daemon start/stop/status commands`
+- [x] Tests: 23 tests in commands/daemon.test.ts (daemon-specific tests)
 
 ---
 
-## Wave 5: Polish & Verification (Sequential)
+## Wave 5: Polish & Verification (Sequential) ✅ COMPLETE
 
 Final wave, run after all features complete.
 
-### 5.1 E2E Tests
-- [ ] RED: E2E test `rlm run` with native backend (expect success)
-- [ ] GREEN: Fix any integration issues
-- [ ] RED: E2E test `rlm run` with daemon backend
-- [ ] GREEN: Fix daemon integration
-- [ ] RED: E2E test config file loading
-- [ ] GREEN: Fix config precedence
-- [ ] RED: E2E test error handling/exit codes
-- [ ] GREEN: Fix exit code handling
-- [ ] COMMIT: `test(cli): add E2E tests for all backends and config`
+### 5.1 E2E Tests ✅
+- [x] RED: E2E test `rlm run` with native backend (expect success)
+- [x] GREEN: Fix any integration issues
+- [x] RED: E2E test `rlm run` with daemon backend
+- [x] GREEN: Fix daemon integration
+- [x] RED: E2E test config file loading
+- [x] GREEN: Fix config precedence
+- [x] RED: E2E test error handling/exit codes
+- [x] GREEN: Fix exit code handling
+- [x] Tests: 37 tests in tests/e2e/cli-run.e2e.test.ts, tests/e2e/cli-config.e2e.test.ts, tests/e2e/cli-daemon.e2e.test.ts
 
-### 5.2 Documentation
-- [ ] Add --help text for all commands
-- [ ] Document config file format
-- [ ] COMMIT: `docs(cli): add CLI usage documentation`
+### 5.2 Documentation ✅
+- [x] Add --help text for all commands
+- [x] Document config file format in help text
 
-### 5.3 Build Verification
-- [ ] Verify `pnpm build` across workspace
-- [ ] Verify `pnpm test` passes
-- [ ] Verify Python script bundles
-- [ ] COMMIT: `chore(cli): finalize build and package configuration`
+### 5.3 Build Verification ✅
+- [x] Verify `pnpm build` across workspace
+- [x] Verify `pnpm test` passes (357 core + 292 CLI = 649 tests)
+- [x] Verify Python script bundles
 
 ---
 
@@ -355,3 +353,10 @@ Wave 3 → Wave 4 dependencies
 
 Wave 5 (Polish) - Sequential after Wave 4
 ```
+
+## Summary
+
+**All waves complete.** Total test coverage:
+- Core package: 357 tests
+- CLI package: 292 tests (1 skipped for CI environments)
+- **Total: 649 tests passing**

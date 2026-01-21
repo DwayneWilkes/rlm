@@ -50,13 +50,17 @@ const JSON_RPC_ERRORS = {
 /**
  * Get the default socket path for the current platform.
  *
+ * Uses user-specific path for isolation between users.
+ *
  * @returns Socket path for Unix or named pipe path for Windows
  */
 export function getDefaultSocketPath(): string {
   if (os.platform() === 'win32') {
-    return '\\\\.\\pipe\\rlm-daemon';
+    const username = os.userInfo().username;
+    return `\\\\.\\pipe\\rlm-daemon-${username}`;
   }
-  return '/tmp/rlm-daemon.sock';
+  const uid = process.getuid?.() ?? 'default';
+  return `/tmp/rlm-daemon-${uid}.sock`;
 }
 
 /**
@@ -82,6 +86,7 @@ export class DaemonServer {
   private socketPath: string;
   private server: net.Server | null = null;
   private running = false;
+  private startTime: number = 0;
 
   /**
    * Create a new DaemonServer.
@@ -127,6 +132,7 @@ export class DaemonServer {
 
       this.server.listen(this.socketPath, () => {
         this.running = true;
+        this.startTime = Date.now();
         resolve();
       });
     });
@@ -276,6 +282,9 @@ export class DaemonServer {
       case 'stats':
         return this.handleStats();
 
+      case 'ping':
+        return this.handlePing();
+
       default:
         throw Object.assign(
           new Error(`Method not found: ${method}`),
@@ -348,5 +357,17 @@ export class DaemonServer {
    */
   private handleStats(): unknown {
     return this.pool.getStats();
+  }
+
+  /**
+   * Handle a ping request.
+   * Returns uptime and worker count for status checks.
+   */
+  private handlePing(): unknown {
+    const stats = this.pool.getStats();
+    return {
+      uptime: Date.now() - this.startTime,
+      workers: stats.total,
+    };
   }
 }

@@ -188,7 +188,12 @@ async function handleStop(): Promise<void> {
 async function handleStatus(options: { json: boolean }): Promise<void> {
   const pidPath = getDefaultPidPath();
   const pid = readPID(pidPath);
-  const info = await pingDaemon();
+
+  // First do a quick check if daemon is running (short timeout)
+  const isRunning = await isDaemonRunning();
+
+  // Only try to ping for detailed info if daemon appears to be running
+  const info = isRunning ? await pingDaemon(undefined, 2000) : null;
 
   if (options.json) {
     const status = {
@@ -227,24 +232,43 @@ async function handleStatus(options: { json: boolean }): Promise<void> {
  */
 export function createDaemonCommand(): Command {
   const daemon = new Command('daemon')
-    .description('Manage the RLM daemon process');
+    .description(
+      'Manage the RLM daemon process\n\n' +
+        'The daemon maintains a pool of Python worker processes for faster execution.\n' +
+        'Start the daemon once and it will be automatically used by subsequent commands.\n\n' +
+        'Examples:\n' +
+        '  $ rlm daemon start\n' +
+        '  $ rlm daemon start --workers 4\n' +
+        '  $ rlm daemon status\n' +
+        '  $ rlm daemon stop'
+    );
 
   daemon
     .command('start')
-    .description('Start the RLM daemon')
-    .option('-w, --workers <n>', 'Number of worker processes', '2')
-    .option('-f, --foreground', 'Run in foreground (for debugging)', false)
+    .description(
+      'Start the RLM daemon\n\n' +
+        'Starts a background daemon process with a pool of Python workers.\n' +
+        'The daemon will be used automatically when running tasks.'
+    )
+    .option('-w, --workers <n>', 'Number of worker processes to spawn (default: 2)', '2')
+    .option('-f, --foreground', 'Run in foreground instead of daemonizing (for debugging)', false)
     .action(handleStart);
 
   daemon
     .command('stop')
-    .description('Stop the RLM daemon')
+    .description(
+      'Stop the RLM daemon\n\n' +
+        'Gracefully shuts down the daemon and all worker processes.'
+    )
     .action(handleStop);
 
   daemon
     .command('status')
-    .description('Show the RLM daemon status')
-    .option('--json', 'Output in JSON format', false)
+    .description(
+      'Show the RLM daemon status\n\n' +
+        'Displays whether the daemon is running, its PID, worker count, and uptime.'
+    )
+    .option('--json', 'Output status in JSON format for scripting', false)
     .action(handleStatus);
 
   return daemon;

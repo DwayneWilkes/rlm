@@ -295,6 +295,7 @@ describe('createDaemonCommand', () => {
   describe('status subcommand', () => {
     it('shows running status when daemon is running', async () => {
       vi.mocked(readPID).mockReturnValue(12345);
+      vi.mocked(isDaemonRunning).mockResolvedValue(true);
       vi.mocked(pingDaemon).mockResolvedValue({
         uptime: 60000,
         workers: 2,
@@ -310,6 +311,7 @@ describe('createDaemonCommand', () => {
 
     it('shows stopped status when daemon is not running', async () => {
       vi.mocked(readPID).mockReturnValue(null);
+      vi.mocked(isDaemonRunning).mockResolvedValue(false);
       vi.mocked(pingDaemon).mockResolvedValue(null);
 
       const program = new Command().addCommand(createDaemonCommand());
@@ -322,6 +324,7 @@ describe('createDaemonCommand', () => {
 
     it('shows PID in status output', async () => {
       vi.mocked(readPID).mockReturnValue(12345);
+      vi.mocked(isDaemonRunning).mockResolvedValue(true);
       vi.mocked(pingDaemon).mockResolvedValue({
         uptime: 60000,
         workers: 2,
@@ -337,6 +340,7 @@ describe('createDaemonCommand', () => {
 
     it('shows worker count in status output', async () => {
       vi.mocked(readPID).mockReturnValue(12345);
+      vi.mocked(isDaemonRunning).mockResolvedValue(true);
       vi.mocked(pingDaemon).mockResolvedValue({
         uptime: 60000,
         workers: 4,
@@ -350,6 +354,7 @@ describe('createDaemonCommand', () => {
 
     it('shows uptime in status output', async () => {
       vi.mocked(readPID).mockReturnValue(12345);
+      vi.mocked(isDaemonRunning).mockResolvedValue(true);
       vi.mocked(pingDaemon).mockResolvedValue({
         uptime: 3600000, // 1 hour
         workers: 2,
@@ -366,6 +371,7 @@ describe('createDaemonCommand', () => {
 
     it('outputs JSON when --json flag is provided', async () => {
       vi.mocked(readPID).mockReturnValue(12345);
+      vi.mocked(isDaemonRunning).mockResolvedValue(true);
       vi.mocked(pingDaemon).mockResolvedValue({
         uptime: 60000,
         workers: 2,

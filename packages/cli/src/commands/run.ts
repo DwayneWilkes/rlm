@@ -37,12 +37,28 @@ interface RunOptions {
  */
 export function createRunCommand(): Command {
   return new Command('run')
-    .description('Execute an RLM task')
-    .argument('<task>', 'Task to execute')
-    .option('-x, --context <file>', 'Path to context file')
-    .option('-c, --config <file>', 'Path to config file')
-    .option('-f, --format <format>', 'Output format (text, json, yaml)', 'text')
-    .option('-b, --backend <backend>', 'Sandbox backend (native, pyodide, daemon)')
+    .description(
+      'Execute an RLM task\n\n' +
+        'Runs the specified task using an LLM with Python REPL capabilities.\n' +
+        'The task will be decomposed and executed iteratively until completion.\n\n' +
+        'Examples:\n' +
+        '  $ rlm run "Analyze the code structure"\n' +
+        '  $ rlm run "Summarize" --context document.txt\n' +
+        '  $ rlm run "Generate report" --format json\n' +
+        '  $ rlm run "Quick analysis" --backend native'
+    )
+    .argument('<task>', 'The task description to execute (quoted string)')
+    .option('-x, --context <file>', 'Path to context file to include with the task')
+    .option('-c, --config <file>', 'Path to custom config file (.rlmrc.yaml)')
+    .option(
+      '-f, --format <format>',
+      'Output format: text (human-readable), json, or yaml',
+      'text'
+    )
+    .option(
+      '-b, --backend <backend>',
+      'Sandbox backend: native (Python), pyodide (WASM), or daemon'
+    )
     .action(async (task: string, options: RunOptions) => {
       try {
         // Load config from file

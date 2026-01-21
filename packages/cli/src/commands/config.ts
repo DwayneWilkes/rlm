@@ -24,12 +24,23 @@ import { loadConfig, getConfigPath } from '../config/index.js';
  */
 export function createConfigCommand(): Command {
   const config = new Command('config')
-    .description('View and manage RLM configuration');
+    .description(
+      'View and manage RLM configuration\n\n' +
+        'Configuration is loaded from .rlmrc.yaml, .rlmrc.json, or rlm.config.js\n' +
+        'files in the current directory or parent directories.\n\n' +
+        'Examples:\n' +
+        '  $ rlm config show\n' +
+        '  $ rlm config path\n' +
+        '  $ rlm config show --config /path/to/config.yaml'
+    );
 
   config
     .command('show')
-    .description('Show resolved configuration as YAML')
-    .option('-c, --config <path>', 'Path to config file')
+    .description(
+      'Show resolved configuration as YAML\n\n' +
+        'Displays the full configuration with all defaults merged.'
+    )
+    .option('-c, --config <path>', 'Path to a specific config file to load')
     .action(async (options: { config?: string }) => {
       const resolvedConfig = await loadConfig(options.config);
       const yaml = yamlStringify(resolvedConfig);
@@ -38,8 +49,11 @@ export function createConfigCommand(): Command {
 
   config
     .command('path')
-    .description('Show config file path')
-    .option('-c, --config <path>', 'Path to config file')
+    .description(
+      'Show config file path\n\n' +
+        'Displays the path to the discovered config file, or indicates if none found.'
+    )
+    .option('-c, --config <path>', 'Path to a specific config file to check')
     .action(async (options: { config?: string }) => {
       const configPath = await getConfigPath(options.config);
       if (configPath) {
