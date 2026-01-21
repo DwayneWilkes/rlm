@@ -8,6 +8,8 @@
     "build": "pnpm -r build",
     "dev": "pnpm -r --parallel dev",
     "test": "pnpm -r test",
+    "test:run": "pnpm -r test:run",
+    "test:ci": "pnpm -r test:ci",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck"
   },
