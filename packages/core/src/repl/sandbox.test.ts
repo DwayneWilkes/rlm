@@ -666,6 +666,167 @@ rlm_query("task with custom context", "custom context data")
       await sandbox.initialize('This is a test context with some searchable content.');
     });
 
+    describe('count_matches function', () => {
+      it('should return count of regex matches without full results', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize('The cat sat on the mat. The cat was fat.');
+
+        const result = await testSandbox.execute(`
+count = count_matches("cat")
+print(count)
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout.trim()).toBe('2');
+
+        await testSandbox.destroy();
+      });
+
+      it('should return 0 when no matches', async () => {
+        const result = await sandbox.execute(`
+count = count_matches("nonexistent_xyz")
+print(count)
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout.trim()).toBe('0');
+      });
+
+      it('should support regex patterns', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize('test123 test456 test789');
+
+        const result = await testSandbox.execute(`
+count = count_matches(r"test\\d+")
+print(count)
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout.trim()).toBe('3');
+
+        await testSandbox.destroy();
+      });
+    });
+
+    describe('extract_json function', () => {
+      it('should extract JSON object from text', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize('Some text {"key": "value", "num": 42} more text');
+
+        const result = await testSandbox.execute(`
+data = extract_json(context)
+print(data['key'])
+print(data['num'])
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('value');
+        expect(result.stdout).toContain('42');
+
+        await testSandbox.destroy();
+      });
+
+      it('should extract JSON array from text', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize('Data: [1, 2, 3] end');
+
+        const result = await testSandbox.execute(`
+data = extract_json(context)
+print(len(data))
+print(data[0])
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('3');
+        expect(result.stdout).toContain('1');
+
+        await testSandbox.destroy();
+      });
+
+      it('should return None when no valid JSON found', async () => {
+        const result = await sandbox.execute(`
+data = extract_json("no json here")
+print(data is None)
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('True');
+      });
+
+      it('should handle nested JSON', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize('{"outer": {"inner": "nested"}}');
+
+        const result = await testSandbox.execute(`
+data = extract_json(context)
+print(data['outer']['inner'])
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('nested');
+
+        await testSandbox.destroy();
+      });
+    });
+
+    describe('extract_sections function', () => {
+      it('should extract sections by header pattern', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize(`# Section 1
+Content for section 1.
+
+# Section 2
+Content for section 2.
+
+# Section 3
+Content for section 3.`);
+
+        const result = await testSandbox.execute(`
+sections = extract_sections(r"^# .+$")
+print(len(sections))
+print(sections[0]['header'])
+print(sections[1]['header'])
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('3');
+        expect(result.stdout).toContain('# Section 1');
+        expect(result.stdout).toContain('# Section 2');
+
+        await testSandbox.destroy();
+      });
+
+      it('should include section content', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize(`## Intro
+This is the intro.
+
+## Body
+This is the body.`);
+
+        const result = await testSandbox.execute(`
+sections = extract_sections(r"^## .+$")
+print('content' in sections[0])
+print(len(sections[0]['content']) > 0)
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('True');
+
+        await testSandbox.destroy();
+      });
+
+      it('should return empty list when no sections found', async () => {
+        const result = await sandbox.execute(`
+sections = extract_sections(r"^### .+$")
+print(len(sections))
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout.trim()).toBe('0');
+      });
+    });
+
     describe('chunk_text function', () => {
       it('should return a list of overlapping text chunks', async () => {
         const result = await sandbox.execute(`
