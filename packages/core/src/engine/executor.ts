@@ -282,6 +282,8 @@ export class Executor {
 
   /**
    * Build the system prompt with environment description and budget info.
+   * For sub-RLMs (depth > 0), includes additional context about being a sub-call
+   * and efficiency guidelines.
    */
   private buildSystemPrompt(
     context: LoadedContext,
@@ -289,7 +291,8 @@ export class Executor {
   ): string {
     const remaining = budget.getRemaining();
 
-    return `You are an RLM (Recursive Language Model). You solve complex tasks by examining context, executing Python code, and delegating sub-tasks.
+    // Base prompt for root RLM
+    const basePrompt = `You are an RLM (Recursive Language Model). You solve complex tasks by examining context, executing Python code, and delegating sub-tasks.
 
 ENVIRONMENT:
 - \`context\`: String variable with your input (${context.length.toLocaleString()} chars, ${context.contentType})
@@ -318,6 +321,30 @@ STRATEGY:
 TERMINATION (use when ready):
 - FINAL(your answer here) - Direct answer
 - FINAL_VAR(variable_name) - Return variable contents`;
+
+    // For sub-RLMs, prepend context about their role and budget
+    if (this.depth > 0) {
+      const allocatedDesc = budget.getAllocatedBudgetDescription(this.depth);
+      const maxDepth = remaining.depth + this.depth;
+
+      const subRLMContext = `[SUB-RLM CONTEXT]
+You are a SUB-RLM at depth ${this.depth}/${maxDepth}.
+You were spawned by a parent RLM to handle a specific sub-task.
+
+ALLOCATED BUDGET:
+${allocatedDesc}
+
+EFFICIENCY GUIDELINES:
+- Your budget is LIMITED - be strategic, not exhaustive
+- Prefer llm_query() over rlm_query() unless truly necessary
+- Aim to complete in 2-5 iterations, not 10+
+- Return FINAL() as soon as you have a reasonable answer
+
+`;
+      return subRLMContext + basePrompt;
+    }
+
+    return basePrompt;
   }
 
   /**

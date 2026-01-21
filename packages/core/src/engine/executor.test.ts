@@ -294,6 +294,101 @@ describe('Executor', () => {
     });
   });
 
+  describe('sub-RLM budget awareness', () => {
+    it('should include sub-RLM context in system prompt for depth > 0', async () => {
+      const adapter = createMockAdapter([{ content: 'FINAL(Sub answer)' }]);
+      router.register('test', adapter);
+
+      // Create executor at depth 1 (sub-RLM)
+      const executor = new Executor(config, router, 1, 'parent-123');
+      await executor.execute({
+        task: 'Sub task',
+        context: 'Context',
+        budget: { maxCost: 2.0, maxIterations: 10, maxDepth: 1 },
+      });
+
+      const call = (adapter.complete as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      // Should indicate this is a sub-RLM
+      expect(call.systemPrompt).toContain('SUB-RLM');
+      expect(call.systemPrompt).toContain('depth 1');
+    });
+
+    it('should include allocated budget description for sub-RLMs', async () => {
+      const adapter = createMockAdapter([{ content: 'FINAL(Sub answer)' }]);
+      router.register('test', adapter);
+
+      // Create executor at depth 1 with specific budget
+      const executor = new Executor(config, router, 1, 'parent-123');
+      await executor.execute({
+        task: 'Sub task',
+        context: 'Context',
+        budget: { maxCost: 1.0, maxIterations: 15 },
+      });
+
+      const call = (adapter.complete as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      // Should show allocated budget info
+      expect(call.systemPrompt).toContain('ALLOCATED BUDGET');
+      expect(call.systemPrompt).toMatch(/\$[\d.]+/); // Dollar amount
+    });
+
+    it('should include efficiency guidelines for sub-RLMs', async () => {
+      const adapter = createMockAdapter([{ content: 'FINAL(Sub answer)' }]);
+      router.register('test', adapter);
+
+      const executor = new Executor(config, router, 1, 'parent-123');
+      await executor.execute({
+        task: 'Sub task',
+        context: 'Context',
+      });
+
+      const call = (adapter.complete as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      // Should include efficiency guidance
+      expect(call.systemPrompt).toContain('EFFICIENCY');
+      expect(call.systemPrompt).toContain('llm_query');
+    });
+
+    it('should NOT include sub-RLM context for root executor (depth 0)', async () => {
+      const adapter = createMockAdapter([{ content: 'FINAL(Root answer)' }]);
+      router.register('test', adapter);
+
+      // Create root executor (depth 0)
+      const executor = new Executor(config, router, 0);
+      await executor.execute({
+        task: 'Root task',
+        context: 'Context',
+      });
+
+      const call = (adapter.complete as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      // Should NOT indicate this is a sub-RLM
+      expect(call.systemPrompt).not.toContain('SUB-RLM');
+      expect(call.systemPrompt).not.toContain('ALLOCATED BUDGET');
+    });
+  });
+
+  describe('auto-downgrade to llm_query', () => {
+    // These tests verify the executor's handling of low-budget scenarios
+    // The actual shouldDowngradeToLLMQuery logic is in BudgetController
+
+    it('should log downgrade decision when budget is low', async () => {
+      // When budget is very low, rlm_query should be downgraded to llm_query
+      // This is tested through the BudgetController's shouldDowngradeToLLMQuery
+      const adapter = createMockAdapter([
+        { content: 'FINAL(Answer)', cost: 0.001 },
+      ]);
+      router.register('test', adapter);
+
+      const executor = new Executor(config, router);
+      const result = await executor.execute({
+        task: 'Task',
+        context: 'Context',
+        budget: { maxCost: 0.3 }, // Low budget below $0.50 threshold
+      });
+
+      // Executor should still work with low budget
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe('llm_query bridge', () => {
     it('should record usage from llm_query calls', async () => {
       // The llm_query bridge is set up but actual calls happen through sandbox
