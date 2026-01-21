@@ -11,13 +11,12 @@ RLM (Recursive Language Model) is a TypeScript library implementing Recursive La
 - **Package Manager**: pnpm 9.15.0+ (workspaces monorepo)
 - **Runtime**: Node.js 20+ / Bun
 - **Language**: TypeScript (strict mode)
-- **Build**: tsup (core/cli/web-api), Vite (web-ui), esbuild (obsidian)
-- **Testing**: Vitest
+- **Build**: tsup (core/cli)
+- **Testing**: Vitest (654 tests: 362 core + 292 CLI)
 - **LLM SDKs**: @anthropic-ai/sdk, openai (optional peer deps)
 - **LLM Providers**: Ollama (default, local), Anthropic, OpenAI
-- **Web Framework**: Hono (backend, Cloudflare Workers deployable)
-- **Frontend**: React 18, Zustand, Tailwind CSS, react-markdown
-- **Python Runtime**: Pyodide (browser WASM)
+- **Python Runtime**: Pyodide (WASM), Native Python (subprocess), Daemon (worker pool)
+- **CLI**: Commander.js, cosmiconfig, Zod
 
 ## Project Conventions
 
@@ -53,33 +52,50 @@ RLM (Recursive Language Model) is a TypeScript library implementing Recursive La
 
 **Monorepo Structure**
 ```
-@rlm/core/
-├── src/
-│   ├── index.ts              # Public API
-│   ├── types.ts              # All type definitions
-│   ├── rlm.ts                # Main RLM class
-│   ├── context/
-│   │   └── loader.ts         # Context loading
-│   ├── repl/
-│   │   ├── sandbox.ts        # Abstract sandbox
-│   │   └── pyodide.ts        # Pyodide implementation
-│   ├── llm/
-│   │   ├── router.ts         # Provider routing
-│   │   └── adapters/         # Ollama, Anthropic, OpenAI
-│   ├── budget/
-│   │   └── controller.ts     # Budget enforcement
-│   └── engine/
-│       ├── executor.ts       # Main execution loop
-│       └── parser.ts         # Response parsing
+packages/
+├── core/                     # @rlm/core - Core library
+│   ├── src/
+│   │   ├── index.ts          # Public API
+│   │   ├── types.ts          # All type definitions
+│   │   ├── rlm.ts            # Main RLM class
+│   │   ├── context/
+│   │   │   └── loader.ts     # Context loading
+│   │   ├── repl/
+│   │   │   ├── sandbox.ts    # Abstract sandbox interface
+│   │   │   ├── pyodide.ts    # Pyodide (WASM) implementation
+│   │   │   └── native-python.ts  # Native subprocess implementation
+│   │   ├── llm/
+│   │   │   ├── router.ts     # Provider routing
+│   │   │   └── adapters/     # Ollama, Anthropic, OpenAI
+│   │   ├── budget/
+│   │   │   └── controller.ts # Budget enforcement
+│   │   └── engine/
+│   │       ├── executor.ts   # Main execution loop
+│   │       └── parser.ts     # Response parsing
+│   └── python/
+│       └── rlm_sandbox.py    # Python sandbox runner script
+│
+└── cli/                      # @rlm/cli - Command-line interface
+    ├── bin/
+    │   └── rlm.ts            # Entry point
+    ├── src/
+    │   ├── commands/         # CLI commands (run, config, daemon)
+    │   ├── config/           # Config loader (cosmiconfig + Zod)
+    │   ├── output/           # Output formatters (text, json, yaml)
+    │   ├── daemon/           # Daemon server, client, worker pool
+    │   └── sandbox/          # Backend selection factory
+    └── tests/
+        └── e2e/              # End-to-end CLI tests
 ```
 
 **Core Data Flow**
-1. User provides task + context + budget config
-2. ContextManager loads context (string input)
-3. PyodideSandbox initializes with context, provides `llm_query()` and `rlm_query()` bridges
-4. Executor runs iteration loop: prompt → LLM response → parse code → execute → capture results
-5. BudgetController enforces limits (cost, tokens, time, depth, iterations)
-6. Loop continues until FINAL marker or budget exhaustion
+1. User provides task + context + budget config (via CLI or programmatic API)
+2. ContextLoader prepares context (string input)
+3. SandboxFactory selects best backend: daemon (~5ms) → native (~50ms) → pyodide (~300ms)
+4. Sandbox initializes with context, provides `llm_query()`, `rlm_query()`, `batch_llm_query()` bridges
+5. Executor runs iteration loop: prompt → LLM response → parse code → execute → capture results
+6. BudgetController enforces limits (cost, tokens, time, depth, iterations)
+7. Loop continues until FINAL marker or budget exhaustion
 
 ### Testing Strategy
 
@@ -140,6 +156,7 @@ test(llm): add mock adapter for router tests
 **Python REPL Bridges**
 - `llm_query(prompt)` - Simple LLM query for single-shot questions
 - `rlm_query(task, ctx?)` - Spawn recursive sub-RLM for complex sub-tasks
+- `batch_llm_query(prompts)` - Execute multiple LLM queries in parallel
 - `chunk_text(text, size, overlap)` - Split text into chunks
 - `search_context(pattern, window)` - Regex search with surrounding context
 
@@ -150,14 +167,33 @@ test(llm): add mock adapter for router tests
 ## Important Constraints
 
 - Budget enforcement is critical - must respect all limits
-- Python sandbox runs via Pyodide WASM - browser environment limitations apply
+- Multiple sandbox backends available: Pyodide (WASM), Native Python (subprocess), Daemon (worker pool)
+- Daemon mode uses Unix sockets (Linux/Mac) or named pipes (Windows) for IPC
 - File size limits (500 lines hard limit) ensure LLM-friendly codebases
 - Avoid over-engineering - only add features directly requested
 - Cloud provider SDKs are optional peer dependencies
 
 ## External Dependencies
 
-- **Pyodide** (required) - Python WASM runtime for browser-based code execution
+- **Pyodide** (optional) - Python WASM runtime for browser-based code execution
+- **Python 3.8+** (optional) - Required for native sandbox and daemon mode
 - **Anthropic API** (optional) - Claude models via @anthropic-ai/sdk
 - **OpenAI API** (optional) - GPT models via openai SDK
 - **Ollama** (default) - Local LLM serving at http://localhost:11434
+
+## CLI Configuration
+
+The CLI supports configuration via `.rlmrc.yaml`, `.rlmrc.json`, or `rlm.config.js`:
+
+```yaml
+provider: ollama
+model: llama3.2
+budget:
+  maxCost: 5.0
+  maxIterations: 30
+  maxDepth: 2
+repl:
+  backend: auto    # auto | native | daemon | pyodide
+output:
+  format: text     # text | json | yaml
+```

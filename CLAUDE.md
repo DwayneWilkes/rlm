@@ -37,11 +37,12 @@ pnpm build
 # Development mode (all packages in parallel)
 pnpm dev
 
-# Run all tests
+# Run all tests (654 tests: 362 core + 292 CLI)
 pnpm test
 
 # Run tests for a specific package
 pnpm --filter @rlm/core test
+pnpm --filter @rlm/cli test
 
 # Run a specific test file
 pnpm --filter @rlm/core test src/budget/controller.test.ts
@@ -55,18 +56,27 @@ pnpm --filter @rlm/core test --watch
 # Lint and typecheck
 pnpm lint
 pnpm typecheck
+
+# CLI commands (after build)
+node packages/cli/dist/bin/rlm.js --help
 ```
 
 ## Architecture
 
+### Packages
+
+- **@rlm/core** - Core library with RLM execution engine, sandboxes, LLM adapters
+- **@rlm/cli** - Command-line interface with config files, daemon mode, output formatters
+
 ### Core Components Data Flow
 
-1. User provides task + context string + budget config
+1. User provides task + context string + budget config (via CLI or API)
 2. **loadContext()** prepares context (token estimation, content type detection)
-3. **PyodideSandbox** initializes with context, provides `llm_query()` and `rlm_query()` bridges
-4. **Executor** runs iteration loop: prompt → LLM response → parse code → execute → capture results
-5. **BudgetController** enforces limits on cost, tokens, time, recursion depth, iterations
-6. Loop continues until FINAL marker or budget exhaustion
+3. **SandboxFactory** selects backend: daemon (~5ms) → native (~50ms) → pyodide (~300ms)
+4. **Sandbox** initializes with context, provides `llm_query()`, `rlm_query()`, `batch_llm_query()` bridges
+5. **Executor** runs iteration loop: prompt → LLM response → parse code → execute → capture results
+6. **BudgetController** enforces limits on cost, tokens, time, recursion depth, iterations
+7. Loop continues until FINAL marker or budget exhaustion
 
 ### Key Types (packages/core/src/types.ts)
 
@@ -126,5 +136,6 @@ pnpm typecheck
 - **Runtime**: Node.js 20+ / Bun
 - **Build**: tsup
 - **Testing**: Vitest
-- **LLM SDKs**: @anthropic-ai/sdk, openai, @anthropic-ai/claude-agent-sdk
-- **Python Runtime**: Pyodide (WASM)
+- **LLM SDKs**: @anthropic-ai/sdk, openai
+- **Python Runtime**: Pyodide (WASM), Native Python (subprocess), Daemon (worker pool)
+- **CLI**: Commander.js, cosmiconfig, Zod

@@ -5,12 +5,35 @@ An AI-powered task decomposition and research system that executes tasks iterati
 ## Features
 
 - **Iterative Execution**: Tasks run in a loop until completion or budget exhaustion
-- **Python REPL Sandbox**: Pyodide-based sandbox with `llm_query()` and `rlm_query()` bridges
+- **Python REPL Sandbox**: Multiple backends - Pyodide (WASM), Native Python, or Daemon mode
 - **Budget Control**: Enforce limits on cost, tokens, time, recursion depth, and iterations
 - **Multiple LLM Providers**: Ollama (local), Anthropic (Claude), OpenAI (GPT)
 - **Full Execution Traces**: Track every iteration and subcall for debugging and analysis
+- **CLI Tool**: Command-line interface for running tasks with config files
+- **Daemon Mode**: Pre-warmed worker pool for ~10x faster repeated executions
+- **Parallel LLM Queries**: `batch_llm_query()` for concurrent sub-task processing
 
 ## Quick Start
+
+### CLI (Recommended)
+
+```bash
+# Install globally
+npm install -g @rlm/cli
+
+# Run a task with a context file
+rlm run "Summarize the key points" --context document.txt
+
+# Run with JSON output
+rlm run "Analyze code patterns" --context src/ --format json
+
+# Use daemon mode for faster execution
+rlm daemon start
+rlm run "Quick analysis" --context data.txt
+rlm daemon stop
+```
+
+### Programmatic API
 
 ```typescript
 import { RLM } from '@rlm/core';
@@ -35,7 +58,10 @@ console.log(result.usage); // { cost, tokens, duration, iterations, subcalls }
 ## Installation
 
 ```bash
-# Install the core package
+# CLI (recommended for most users)
+npm install -g @rlm/cli
+
+# Or as a library in your project
 pnpm add @rlm/core
 
 # Optional: Install cloud provider SDKs
@@ -142,6 +168,83 @@ const rlm = new RLM({
 });
 ```
 
+## CLI Usage
+
+The `@rlm/cli` package provides a full-featured command-line interface.
+
+### Commands
+
+```bash
+# Run a task
+rlm run "Your task description" [options]
+
+# View/manage configuration
+rlm config show              # Show current config
+rlm config path              # Show config file path
+
+# Daemon mode (faster repeated executions)
+rlm daemon start [--workers 4]  # Start daemon
+rlm daemon status               # Check daemon status
+rlm daemon stop                 # Stop daemon
+```
+
+### Run Command Options
+
+```bash
+rlm run <task> [options]
+
+Options:
+  --context <file>     Input context file (text, markdown, etc.)
+  --provider <name>    LLM provider: ollama, anthropic, openai
+  --model <name>       Model to use (e.g., llama3.2, claude-sonnet-4-20250514)
+  --format <type>      Output format: text, json, yaml
+  --backend <type>     Sandbox backend: auto, native, daemon, pyodide
+  --max-cost <n>       Maximum cost in dollars
+  --max-iterations <n> Maximum iterations
+  --verbose            Enable verbose output
+```
+
+### Configuration File
+
+Create `.rlmrc.yaml` in your project or home directory:
+
+```yaml
+# ~/.rlmrc.yaml
+provider: ollama
+model: llama3.2
+budget:
+  maxCost: 5.0
+  maxIterations: 30
+  maxDepth: 2
+repl:
+  backend: auto        # auto | native | daemon | pyodide
+output:
+  format: text         # text | json | yaml
+```
+
+### Sandbox Backends
+
+| Backend | Startup | Use Case |
+|---------|---------|----------|
+| `pyodide` | ~300ms | Browser environments (WASM) |
+| `native` | ~50ms | CLI with Python installed |
+| `daemon` | ~5ms | Benchmarking, repeated calls |
+| `auto` | varies | Selects best available |
+
+**Daemon mode** maintains a pool of pre-warmed Python workers:
+
+```bash
+# Start daemon with 4 workers
+rlm daemon start --workers 4
+
+# All subsequent commands use the daemon automatically
+rlm run "Task 1" --context file1.txt  # ~5ms startup
+rlm run "Task 2" --context file2.txt  # ~5ms startup
+
+# Stop when done
+rlm daemon stop
+```
+
 ## API Reference
 
 ### RLM Class
@@ -218,10 +321,23 @@ Inside the REPL, the LLM has access to:
 ### Bridge Functions
 - `llm_query(prompt)` - Simple LLM query for single-shot questions
 - `rlm_query(task, ctx?)` - Spawn a recursive sub-RLM for complex sub-tasks
+- `batch_llm_query(prompts)` - Execute multiple LLM queries in parallel
 
 ### Utility Functions
 - `chunk_text(text, size, overlap)` - Split text into overlapping chunks
 - `search_context(pattern, window)` - Regex search with surrounding context
+
+### Batch Processing Example
+
+```python
+# Process multiple queries in parallel (faster than sequential llm_query calls)
+prompts = [
+    "Summarize section 1",
+    "Summarize section 2",
+    "Summarize section 3"
+]
+results = batch_llm_query(prompts)  # All run concurrently
+```
 
 ### Termination Markers
 - `FINAL(answer)` - Return a direct answer
@@ -335,14 +451,24 @@ pnpm typecheck
 User Task + Context + Budget
          │
          ▼
+┌─────────────────────────────────────────────────────────┐
+│                     CLI (@rlm/cli)                       │
+│  rlm run "task" --context file.txt                      │
+│  Config: .rlmrc.yaml  │  Output: text/json/yaml         │
+└─────────────────────────────────────────────────────────┘
+         │
+         ▼
     ┌─────────────┐
     │ContextLoader│ ──► Prepare context for REPL
     └─────────────┘
          │
          ▼
-    ┌─────────────┐
-    │PyodideSandbox│ ──► Initialize Python REPL with bridges
-    └─────────────┘
+    ┌─────────────┐     ┌──────────────────────────────┐
+    │SandboxFactory│ ───►│  Backend Selection           │
+    └─────────────┘     │  • daemon  (~5ms)  ◄─ pool   │
+                        │  • native  (~50ms) ◄─ Python │
+                        │  • pyodide (~300ms)◄─ WASM   │
+                        └──────────────────────────────┘
          │
          ▼
     ┌─────────────┐

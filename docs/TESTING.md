@@ -3,11 +3,12 @@
 ## Quick Start
 
 ```bash
-# Run all tests
+# Run all tests (654 tests: 362 core + 292 CLI)
 pnpm test
 
 # Run tests for a specific package
-pnpm --filter @rlm/core test
+pnpm --filter @rlm/core test    # 362 tests
+pnpm --filter @rlm/cli test     # 292 tests
 
 # Run a specific test file
 pnpm --filter @rlm/core test src/budget/controller.test.ts
@@ -108,6 +109,36 @@ packages/core/
 | Integration tests | `tests/integration/` | Tests multiple modules together |
 | Fixtures | `tests/fixtures/` | Shared across all tests |
 | E2E tests | `tests/e2e/` | Full system tests |
+
+### CLI Package Test Structure
+
+```
+packages/cli/
+├── src/
+│   ├── commands/
+│   │   ├── run.ts
+│   │   ├── run.test.ts           # Unit tests for run command
+│   │   ├── config.ts
+│   │   ├── config.test.ts
+│   │   ├── daemon.ts
+│   │   └── daemon.test.ts
+│   ├── daemon/
+│   │   ├── server.ts
+│   │   ├── server.test.ts        # Daemon server unit tests
+│   │   ├── client.ts
+│   │   ├── client.test.ts
+│   │   └── pool.test.ts
+│   └── output/
+│       ├── text.ts
+│       ├── text.test.ts
+│       ├── json.test.ts
+│       └── yaml.test.ts
+└── tests/
+    └── e2e/                       # End-to-end CLI tests
+        ├── cli-run.e2e.test.ts
+        ├── cli-config.e2e.test.ts
+        └── cli-daemon.e2e.test.ts
+```
 
 ### Test Size Limits
 
@@ -358,3 +389,66 @@ pnpm --filter @rlm/core test --failed
 - Avoid timing-dependent assertions
 - Use deterministic test data
 - Mock external dependencies
+
+---
+
+## CLI Testing Patterns
+
+### Testing Daemon Functionality
+
+When testing daemon commands, mock the detection and ping functions:
+
+```typescript
+import { vi } from 'vitest';
+import { isDaemonRunning, pingDaemon } from '../daemon/detect.js';
+
+vi.mock('../daemon/detect.js');
+
+it('shows running status when daemon is running', async () => {
+  vi.mocked(isDaemonRunning).mockResolvedValue(true);
+  vi.mocked(pingDaemon).mockResolvedValue({
+    uptime: 60000,
+    workers: 2,
+  });
+  // Test assertions...
+});
+```
+
+### E2E Tests for CLI
+
+E2E tests spawn the actual CLI process:
+
+```typescript
+import { execSync } from 'node:child_process';
+
+it('runs a task via CLI', () => {
+  const cliPath = 'packages/cli/dist/bin/rlm.js';
+  const result = execSync(
+    `node ${cliPath} run "test" --format json`,
+    { encoding: 'utf-8' }
+  );
+  expect(JSON.parse(result)).toHaveProperty('output');
+});
+```
+
+### Skipping Environment-Specific Tests
+
+```typescript
+// Skip daemon E2E tests in CI (no persistent processes)
+describe.skipIf(process.env.CI)('Daemon E2E', () => { ... });
+
+// Skip tests that require Python
+describe.runIf(isPythonAvailable())('Native Sandbox', () => { ... });
+```
+
+### Testing Timeout-Sensitive Code
+
+For tests involving timeouts (daemon ping, socket connections):
+
+```typescript
+it('handles daemon not running', async () => {
+  // Use shorter timeouts in tests
+  const result = await pingDaemon(undefined, 500); // 500ms instead of 5000ms
+  expect(result).toBeNull();
+}, 2000); // Overall test timeout
+```
