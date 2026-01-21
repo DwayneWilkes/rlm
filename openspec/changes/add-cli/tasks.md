@@ -324,15 +324,20 @@ Final wave, run after all features complete.
 
 ---
 
-## Deferred: Async Batch Support
+## Wave 6: Async Batch Support ✅ COMPLETE
 
-Follow-up change after CLI is stable.
+Performance optimization for parallel LLM queries.
 
-- [ ] RED: Write test for batch collecting multiple llm_query calls
-- [ ] GREEN: Implement batch window (10ms)
-- [ ] RED: Write test for parallel LLM dispatch
-- [ ] GREEN: Implement Promise.all batching
-- [ ] REFACTOR: Make window configurable
+- [x] RED: Write test for batch_llm_query function
+- [x] GREEN: Implement batch_llm_query in Python sandbox
+- [x] RED: Write test for parallel LLM dispatch
+- [x] GREEN: Implement Promise.all batching in NativePythonSandbox
+- [x] Tests: 5 new tests in native-python.test.ts
+
+**Implementation:**
+- Added `batch_llm_query(prompts: List[str]) -> List[str]` to Python sandbox
+- Processes all prompts in parallel using `Promise.all`
+- Reduces wall-clock time from `N * LLM_latency` to `max(LLM_latencies)`
 
 ---
 
@@ -357,6 +362,6 @@ Wave 5 (Polish) - Sequential after Wave 4
 ## Summary
 
 **All waves complete.** Total test coverage:
-- Core package: 357 tests
+- Core package: 362 tests (357 original + 5 batch support)
 - CLI package: 292 tests (1 skipped for CI environments)
-- **Total: 649 tests passing**
+- **Total: 654 tests passing**

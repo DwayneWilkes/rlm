@@ -332,7 +332,7 @@ export class NativePythonSandbox implements Sandbox {
   private async handleBridgeRequest(request: JsonRpcRequest): Promise<void> {
     console.debug('[NativePythonSandbox] Bridge request:', request.method, request.params);
 
-    let result: string;
+    let result: string | string[];
     let error: string | undefined;
 
     try {
@@ -346,6 +346,10 @@ export class NativePythonSandbox implements Sandbox {
           ? (request.params?.context as string)
           : undefined;
         result = await this.bridges.onRLMQuery(task, context);
+      } else if (request.method === 'bridge:batch_llm') {
+        // Handle batch LLM queries in parallel
+        const prompts = (request.params?.prompts as string[]) ?? [];
+        result = await this.handleBatchLLM(prompts);
       } else {
         throw new Error(`Unknown bridge method: ${request.method}`);
       }
@@ -363,6 +367,40 @@ export class NativePythonSandbox implements Sandbox {
     };
 
     this.writeToProcess(JSON.stringify(response) + '\n');
+  }
+
+  /**
+   * Handle batch LLM queries in parallel using Promise.all.
+   *
+   * This processes multiple prompts concurrently, reducing wall-clock time
+   * from N * LLM_latency to approximately max(LLM_latencies).
+   *
+   * @param prompts - Array of prompts to process
+   * @returns Array of responses in the same order as prompts
+   */
+  private async handleBatchLLM(prompts: string[]): Promise<string[]> {
+    if (prompts.length === 0) {
+      return [];
+    }
+
+    console.debug('[NativePythonSandbox] Processing batch of', prompts.length, 'LLM queries in parallel');
+
+    // Process all prompts in parallel
+    const results = await Promise.all(
+      prompts.map(async (prompt) => {
+        try {
+          return await this.bridges.onLLMQuery(prompt);
+        } catch (err) {
+          // Return error message instead of throwing
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          return `[Error: ${errorMessage}]`;
+        }
+      })
+    );
+
+    console.debug('[NativePythonSandbox] Batch complete, got', results.length, 'responses');
+
+    return results;
   }
 
   /**

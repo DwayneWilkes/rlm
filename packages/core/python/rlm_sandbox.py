@@ -148,6 +148,7 @@ class RlmSandbox:
         # Inject bridge functions into globals
         self._globals["llm_query"] = self._make_llm_query()
         self._globals["rlm_query"] = self._make_rlm_query()
+        self._globals["batch_llm_query"] = self._make_batch_llm_query()
 
     def _make_llm_query(self):
         """Create the llm_query function for the sandbox."""
@@ -191,7 +192,39 @@ class RlmSandbox:
             return response
         return rlm_query
 
-    def _bridge_call(self, method: str, params: Dict[str, Any]) -> str:
+    def _make_batch_llm_query(self):
+        """Create the batch_llm_query function for the sandbox."""
+        from typing import List
+
+        def batch_llm_query(prompts: List[str]) -> List[str]:
+            """
+            Query an LLM with multiple prompts in parallel.
+
+            This is more efficient than calling llm_query() multiple times
+            as all prompts are sent to the host at once and processed in parallel.
+
+            Args:
+                prompts: List of prompts to send to the LLM
+
+            Returns:
+                List of LLM responses in the same order as prompts
+            """
+            if not prompts:
+                return []
+
+            logger.debug(f"batch_llm_query: num_prompts={len(prompts)}")
+            response = self._bridge_call("bridge:batch_llm", {"prompts": prompts})
+            # Response is a list of strings
+            if isinstance(response, list):
+                logger.debug(f"batch_llm_query: num_responses={len(response)}")
+                return response
+            else:
+                # Handle unexpected response format
+                logger.error(f"batch_llm_query: unexpected response type {type(response)}")
+                return [str(response)] * len(prompts)
+        return batch_llm_query
+
+    def _bridge_call(self, method: str, params: Dict[str, Any]) -> Any:
         """
         Make a bridge callback to the host via JSON-RPC.
 
@@ -200,7 +233,7 @@ class RlmSandbox:
             params: Parameters for the bridge call
 
         Returns:
-            The result from the host
+            The result from the host (string or list depending on method)
         """
         self._bridge_counter += 1
         request_id = f"bridge:{self._bridge_counter}"

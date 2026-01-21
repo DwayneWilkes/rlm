@@ -241,4 +241,121 @@ describe('NativePythonSandbox', () => {
       await sandbox.destroy();
     }, 10000);
   });
+
+  describe('batch_llm_query', () => {
+    it('should execute multiple LLM queries in a single call', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+      bridges.onLLMQuery = vi.fn()
+        .mockResolvedValueOnce('Response 1')
+        .mockResolvedValueOnce('Response 2')
+        .mockResolvedValueOnce('Response 3');
+
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('context');
+
+      const result = await sandbox.execute(`
+results = batch_llm_query(["prompt1", "prompt2", "prompt3"])
+print(len(results))
+print(results[0])
+print(results[1])
+print(results[2])
+`);
+
+      expect(result.stdout).toContain('3');
+      expect(result.stdout).toContain('Response 1');
+      expect(result.stdout).toContain('Response 2');
+      expect(result.stdout).toContain('Response 3');
+
+      await sandbox.destroy();
+    });
+
+    it('should call onLLMQuery for each prompt in batch', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+      bridges.onLLMQuery = vi.fn().mockResolvedValue('Response');
+
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('context');
+
+      await sandbox.execute('results = batch_llm_query(["p1", "p2"])');
+
+      expect(bridges.onLLMQuery).toHaveBeenCalledTimes(2);
+      expect(bridges.onLLMQuery).toHaveBeenCalledWith('p1');
+      expect(bridges.onLLMQuery).toHaveBeenCalledWith('p2');
+
+      await sandbox.destroy();
+    });
+
+    it('should process batch queries in parallel', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+
+      // Track call order and timing
+      const callTimes: number[] = [];
+      bridges.onLLMQuery = vi.fn().mockImplementation(async () => {
+        callTimes.push(Date.now());
+        // Simulate LLM delay
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return 'Response';
+      });
+
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('context');
+
+      const startTime = Date.now();
+      await sandbox.execute('results = batch_llm_query(["p1", "p2", "p3"])');
+      const endTime = Date.now();
+
+      // If parallel, total time should be ~100ms (one delay), not ~300ms (three delays)
+      // Allow some margin for test execution overhead
+      expect(endTime - startTime).toBeLessThan(250);
+
+      await sandbox.destroy();
+    });
+
+    it('should return empty list for empty batch', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('context');
+
+      const result = await sandbox.execute(`
+results = batch_llm_query([])
+print(len(results))
+print(type(results).__name__)
+`);
+
+      expect(result.stdout).toContain('0');
+      expect(result.stdout).toContain('list');
+
+      await sandbox.destroy();
+    });
+
+    it('should handle errors in individual batch items', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+      bridges.onLLMQuery = vi.fn()
+        .mockResolvedValueOnce('Success 1')
+        .mockRejectedValueOnce(new Error('LLM Error'))
+        .mockResolvedValueOnce('Success 3');
+
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('context');
+
+      // Error in one item should be captured, not crash the whole batch
+      const result = await sandbox.execute(`
+results = batch_llm_query(["p1", "p2", "p3"])
+print(results[0])
+print("error" in results[1].lower() if isinstance(results[1], str) else "has_error")
+print(results[2])
+`);
+
+      expect(result.stdout).toContain('Success 1');
+      expect(result.stdout).toContain('Success 3');
+
+      await sandbox.destroy();
+    });
+  });
 });
