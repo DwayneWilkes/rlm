@@ -169,20 +169,24 @@ class RlmSandbox:
 
     def _make_rlm_query(self):
         """Create the rlm_query function for the sandbox."""
-        def rlm_query(task: str, ctx: str) -> str:
+        def rlm_query(task: str, ctx: Optional[str] = None) -> str:
             """
             Execute a recursive RLM sub-task.
 
             Args:
                 task: The task description
-                ctx: The context for the task
+                ctx: Optional context for the task (uses current context if None)
 
             Returns:
                 The result of the sub-task
             """
-            ctx_present = "yes" if ctx else "no"
+            ctx_present = "yes" if ctx is not None else "no"
             logger.debug(f"rlm_query: task_len={len(task)}, context_present={ctx_present}")
-            response = self._bridge_call("bridge:rlm", {"task": task, "ctx": ctx})
+            # Pass context to bridge, or None if not provided
+            params = {"task": task}
+            if ctx is not None:
+                params["context"] = ctx
+            response = self._bridge_call("bridge:rlm", params)
             logger.debug(f"rlm_query: response_len={len(response)}")
             return response
         return rlm_query
@@ -237,6 +241,91 @@ class RlmSandbox:
         context_len = len(context)
         logger.debug(f"Initializing sandbox with context length: {context_len} chars")
         self._globals["context"] = context
+
+        # Add utility functions
+        self._globals["chunk_text"] = self._make_chunk_text()
+        self._globals["search_context"] = self._make_search_context()
+
+    def _make_chunk_text(self):
+        """Create the chunk_text utility function."""
+        def chunk_text(text: str, chunk_size: int, overlap: int = 0) -> list:
+            """
+            Split text into chunks of specified size with optional overlap.
+
+            Args:
+                text: The text to split
+                chunk_size: Size of each chunk
+                overlap: Number of characters to overlap between chunks
+
+            Returns:
+                List of text chunks
+            """
+            if chunk_size <= 0:
+                return [text]
+
+            chunks = []
+            start = 0
+            while start < len(text):
+                end = start + chunk_size
+                chunks.append(text[start:end])
+                start = end - overlap if overlap > 0 else end
+            return chunks
+        return chunk_text
+
+    def _make_search_context(self):
+        """Create the search_context utility function."""
+        import re
+
+        def search_context(pattern: str, window: int = 50) -> list:
+            """
+            Search for pattern in context and return matches with surrounding text.
+
+            Args:
+                pattern: Regular expression pattern to search for
+                window: Number of characters to include before and after match
+
+            Returns:
+                List of dictionaries with 'match' and 'context' keys
+            """
+            context = self._globals.get("context", "")
+            results = []
+
+            for match in re.finditer(pattern, context):
+                start = max(0, match.start() - window)
+                end = min(len(context), match.end() + window)
+                results.append({
+                    "match": match.group(),
+                    "context": context[start:end],
+                    "start": match.start(),
+                    "end": match.end()
+                })
+
+            return results
+        return search_context
+
+    def get_variable(self, name: str) -> Dict[str, Any]:
+        """
+        Get a variable's value from the sandbox globals.
+
+        Args:
+            name: Variable name to retrieve
+
+        Returns:
+            Dictionary with 'value' and 'found' keys
+        """
+        logger.debug(f"Getting variable: {name}")
+
+        if name in self._globals:
+            value = self._globals[name]
+            # Convert to JSON-serializable value
+            try:
+                json.dumps(value)  # Test if serializable
+                return {"value": value, "found": True}
+            except (TypeError, ValueError):
+                # Not JSON serializable, convert to string
+                return {"value": str(value), "found": True}
+        else:
+            return {"value": None, "found": False}
 
     def execute(self, code: str) -> Dict[str, Any]:
         """
@@ -321,6 +410,9 @@ def handle_request(sandbox: RlmSandbox, request_str: str) -> str:
         if method == "execute":
             code = params.get("code", "")
             result = sandbox.execute(code)
+            # If there was an error in stderr, include it in the error field
+            if result.get("stderr"):
+                result["error"] = result["stderr"]
             return format_jsonrpc_response(request_id, result=result)
 
         elif method == "initialize":
@@ -328,6 +420,12 @@ def handle_request(sandbox: RlmSandbox, request_str: str) -> str:
             sandbox.initialize(context)
             logger.debug("Initialize method completed")
             return format_jsonrpc_response(request_id, result={"status": "ok"})
+
+        elif method == "get_variable":
+            name = params.get("name", "")
+            result = sandbox.get_variable(name)
+            logger.debug(f"Get variable '{name}' completed: found={result.get('found')}")
+            return format_jsonrpc_response(request_id, result=result)
 
         elif method == "destroy":
             sandbox.destroy()
