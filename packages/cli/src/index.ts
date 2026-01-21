@@ -23,6 +23,22 @@ import { logger, setLogLevel, getLogLevel, type LogLevel } from './utils/logger.
 // Re-export logger utilities
 export { logger, setLogLevel, getLogLevel, type LogLevel };
 
+// Re-export config utilities
+export {
+  ConfigSchema,
+  parseConfig,
+  loadConfig,
+  mergeConfig,
+  getConfigPath,
+  type Config,
+  type Provider,
+  type Backend,
+  type OutputFormat,
+  type BudgetConfig,
+  type ReplConfig,
+  type OutputConfig,
+} from './config/index.js';
+
 /**
  * Main CLI entry point.
  *
