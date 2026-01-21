@@ -1,0 +1,19 @@
+# RLM Configuration - Claude Code Provider
+# Uses Claude Code subscription authentication (no API key needed)
+
+provider: claude-code
+model: claude-opus-4-5
+subcallModel: claude-sonnet-4-5
+
+budget:
+  maxCost: 5.0
+  maxIterations: 30
+  maxDepth: 0      # 0 = unlimited depth (bounded by cost/time/iterations)
+  maxTime: 300000  # 5 minutes
+
+repl:
+  backend: auto  # auto|native|pyodide|daemon
+  timeout: 30000
+
+output:
+  format: text  # text|json|yaml
