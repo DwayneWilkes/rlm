@@ -61,6 +61,16 @@ export { DaemonServer, getDefaultSocketPath } from './server.js';
 // PID utilities
 export { writePID, readPID, cleanupPID, isProcessRunning } from './pid.js';
 
+// Authentication utilities
+export {
+  getDefaultTokenPath,
+  generateToken,
+  writeToken,
+  readToken,
+  cleanupToken,
+  validateToken,
+} from './auth.js';
+
 // ============================================
 // CLIENT-SIDE EXPORTS
 // ============================================

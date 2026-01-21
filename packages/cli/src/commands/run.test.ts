@@ -31,6 +31,10 @@ vi.mock('node:fs/promises', () => ({
   readFile: vi.fn(),
 }));
 
+vi.mock('../utils/index.js', () => ({
+  validateFilePathOrThrow: vi.fn((path: string) => ({ resolvedPath: path })),
+}));
+
 import { loadConfig, mergeConfig } from '../config/index.js';
 import { createSandbox, detectBestBackend } from '../sandbox/index.js';
 import { createFormatter } from '../output/index.js';

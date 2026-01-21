@@ -129,17 +129,32 @@ describe('Daemon Detection', () => {
     });
 
     it('returns daemon info when daemon is running', async () => {
-      // Create a mock server that responds to ping
+      // Create a mock server that responds to auth and ping
       server = net.createServer((socket) => {
+        let buffer = '';
         socket.on('data', (data) => {
-          const request = JSON.parse(data.toString().trim());
-          if (request.method === 'ping') {
-            const response = {
-              jsonrpc: '2.0',
-              id: request.id,
-              result: { uptime: 12345, workers: 2 },
-            };
-            socket.write(JSON.stringify(response) + '\n');
+          buffer += data.toString();
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const request = JSON.parse(line);
+            if (request.method === 'auth') {
+              const response = {
+                jsonrpc: '2.0',
+                id: request.id,
+                result: { authenticated: true },
+              };
+              socket.write(JSON.stringify(response) + '\n');
+            } else if (request.method === 'ping') {
+              const response = {
+                jsonrpc: '2.0',
+                id: request.id,
+                result: { uptime: 12345, workers: 2 },
+              };
+              socket.write(JSON.stringify(response) + '\n');
+            }
           }
         });
       });
@@ -201,15 +216,30 @@ describe('Daemon Detection', () => {
 
     it('handles response without workers field', async () => {
       server = net.createServer((socket) => {
+        let buffer = '';
         socket.on('data', (data) => {
-          const request = JSON.parse(data.toString().trim());
-          if (request.method === 'ping') {
-            const response = {
-              jsonrpc: '2.0',
-              id: request.id,
-              result: { uptime: 5000 }, // No workers field
-            };
-            socket.write(JSON.stringify(response) + '\n');
+          buffer += data.toString();
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const request = JSON.parse(line);
+            if (request.method === 'auth') {
+              const response = {
+                jsonrpc: '2.0',
+                id: request.id,
+                result: { authenticated: true },
+              };
+              socket.write(JSON.stringify(response) + '\n');
+            } else if (request.method === 'ping') {
+              const response = {
+                jsonrpc: '2.0',
+                id: request.id,
+                result: { uptime: 5000 }, // No workers field
+              };
+              socket.write(JSON.stringify(response) + '\n');
+            }
           }
         });
       });

@@ -10,6 +10,7 @@
 
 import * as net from 'node:net';
 import type { Sandbox, SandboxBridges, CodeExecution } from '@rlm/core';
+import { readToken, getDefaultTokenPath } from './auth.js';
 
 /**
  * JSON-RPC request interface.
@@ -83,9 +84,11 @@ interface PendingRequest {
 export class DaemonClientSandbox implements Sandbox {
   private socketPath: string;
   private bridges: SandboxBridges;
+  private authToken: string | null;
   private socket: net.Socket | null = null;
   private initialized = false;
   private destroyed = false;
+  private authenticated = false;
   private requestId = 0;
   private pendingRequests: Map<number, PendingRequest> = new Map();
   private buffer = '';
@@ -95,10 +98,13 @@ export class DaemonClientSandbox implements Sandbox {
    *
    * @param socketPath - Path to the daemon socket
    * @param bridges - Callbacks for LLM interactions
+   * @param authToken - Optional auth token (auto-reads from default path if not provided)
    */
-  constructor(socketPath: string, bridges: SandboxBridges) {
+  constructor(socketPath: string, bridges: SandboxBridges, authToken?: string) {
     this.socketPath = socketPath;
     this.bridges = bridges;
+    // Auto-read token from default path if not provided
+    this.authToken = authToken ?? readToken(getDefaultTokenPath());
   }
 
   /**
@@ -114,9 +120,31 @@ export class DaemonClientSandbox implements Sandbox {
     // Connect to daemon
     await this.connect();
 
+    // Authenticate if token is available
+    if (this.authToken && !this.authenticated) {
+      await this.authenticate();
+    }
+
     // Send initialize request
     await this.sendRequest('initialize', { context });
     this.initialized = true;
+  }
+
+  /**
+   * Authenticate with the daemon using the configured token.
+   *
+   * @throws Error if authentication fails
+   */
+  private async authenticate(): Promise<void> {
+    if (!this.authToken) {
+      throw new Error('No auth token configured');
+    }
+
+    const result = await this.sendRequest('auth', { token: this.authToken });
+    if (!(result as { authenticated?: boolean })?.authenticated) {
+      throw new Error('Daemon authentication failed');
+    }
+    this.authenticated = true;
   }
 
   /**
@@ -186,6 +214,7 @@ export class DaemonClientSandbox implements Sandbox {
 
     this.destroyed = true;
     this.initialized = false;
+    this.authenticated = false;
 
     // Reject all pending requests
     for (const [, pending] of this.pendingRequests) {

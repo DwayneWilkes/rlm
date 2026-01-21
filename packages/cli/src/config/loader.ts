@@ -96,6 +96,16 @@ export async function loadConfig(
 
     if (result && !result.isEmpty) {
       logger.debug(`Config loaded from: ${result.filepath}`);
+
+      // Warn about JS config files - they execute arbitrary code
+      if (result.filepath.endsWith('.js') || result.filepath.endsWith('.cjs')) {
+        logger.warn(
+          `Loading config from JavaScript file: ${result.filepath}\n` +
+            `  This is executing JavaScript code from this file.\n` +
+            `  Only use .js config files from sources you trust.`
+        );
+      }
+
       return parseConfig(result.config);
     }
 

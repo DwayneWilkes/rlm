@@ -10,6 +10,7 @@
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { readToken, getDefaultTokenPath } from './auth.js';
 
 /**
  * Daemon ping response containing status information.
@@ -94,9 +95,11 @@ export async function isDaemonRunning(socketPath?: string): Promise<boolean> {
  * Ping the daemon to get status information.
  *
  * Sends a JSON-RPC ping request and returns daemon status.
+ * Automatically authenticates using the token from the default path.
  *
  * @param socketPath - Optional custom socket path (defaults to getSocketPath())
  * @param timeout - Timeout in milliseconds (default: 5000)
+ * @param authToken - Optional auth token (auto-reads from default path if not provided)
  * @returns Daemon info if running and responsive, null otherwise
  *
  * @example
@@ -109,14 +112,18 @@ export async function isDaemonRunning(socketPath?: string): Promise<boolean> {
  */
 export async function pingDaemon(
   socketPath?: string,
-  timeout = 5000
+  timeout = 5000,
+  authToken?: string
 ): Promise<DaemonInfo | null> {
   const target = socketPath ?? getSocketPath();
+  const token = authToken ?? readToken(getDefaultTokenPath());
 
   return new Promise((resolve) => {
     const socket = net.createConnection(target);
     let buffer = '';
     let resolved = false;
+    let authenticated = false;
+    let requestId = 0;
 
     const cleanup = () => {
       if (!resolved) {
@@ -128,14 +135,24 @@ export async function pingDaemon(
 
     const timeoutHandle = setTimeout(cleanup, timeout);
 
-    socket.on('connect', () => {
-      // Send JSON-RPC ping request
+    const sendRequest = (method: string, params?: Record<string, unknown>) => {
       const request = {
         jsonrpc: '2.0',
-        id: 1,
-        method: 'ping',
+        id: ++requestId,
+        method,
+        params,
       };
       socket.write(JSON.stringify(request) + '\n');
+    };
+
+    socket.on('connect', () => {
+      // Authenticate first if token is available
+      if (token) {
+        sendRequest('auth', { token });
+      } else {
+        // No token, try ping directly (may fail if auth is required)
+        sendRequest('ping');
+      }
     });
 
     socket.on('data', (data: Buffer) => {
@@ -148,6 +165,23 @@ export async function pingDaemon(
 
         try {
           const response = JSON.parse(line);
+
+          // Check for authentication response
+          if (!authenticated && token && response.result?.authenticated) {
+            authenticated = true;
+            // Now send the ping request
+            sendRequest('ping');
+            continue;
+          }
+
+          // Check for authentication error
+          if (!authenticated && token && response.error) {
+            // Auth failed, cleanup
+            cleanup();
+            return;
+          }
+
+          // Check for ping response
           if (response.result && typeof response.result.uptime === 'number') {
             clearTimeout(timeoutHandle);
             resolved = true;

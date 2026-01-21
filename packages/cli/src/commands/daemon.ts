@@ -17,6 +17,12 @@ import { readPID, cleanupPID, isProcessRunning, writePID } from '../daemon/pid.j
 import { getSocketPath, isDaemonRunning, pingDaemon } from '../daemon/detect.js';
 import { DaemonServer, getDefaultSocketPath } from '../daemon/server.js';
 import { WorkerPool } from '../daemon/pool.js';
+import {
+  generateToken,
+  writeToken,
+  cleanupToken,
+  getDefaultTokenPath,
+} from '../daemon/auth.js';
 
 /**
  * Get the default PID file path.
@@ -106,8 +112,13 @@ async function runDaemonForeground(workers: number, pidPath: string): Promise<vo
   // Write PID file
   writePID(pidPath);
 
+  // Generate and write authentication token
+  const tokenPath = getDefaultTokenPath();
+  const authToken = generateToken();
+  writeToken(tokenPath, authToken);
+
   const pool = new WorkerPool(workers);
-  const server = new DaemonServer(pool, getDefaultSocketPath());
+  const server = new DaemonServer(pool, getDefaultSocketPath(), authToken);
 
   // Setup graceful shutdown
   const shutdown = async () => {
@@ -115,6 +126,7 @@ async function runDaemonForeground(workers: number, pidPath: string): Promise<vo
     await server.stop();
     await pool.shutdown();
     cleanupPID(pidPath);
+    cleanupToken(tokenPath);
     process.exit(0);
   };
 

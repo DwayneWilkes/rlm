@@ -814,10 +814,11 @@ my_dict = {"key": "value", "num": 123}
   });
 
   describe('Configuration Options', () => {
-    it('should accept indexURL as string', async () => {
+    it('should accept indexURL from allowed domain', async () => {
+      // Use an allowed domain (cdn.jsdelivr.net)
       const configWithUrl: REPLConfig = {
         ...defaultConfig,
-        indexURL: 'https://custom.cdn.com/pyodide/',
+        indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.0/full/',
       };
       const customSandbox = createSandbox(configWithUrl, defaultBridges);
       await customSandbox.initialize('test');
@@ -829,18 +830,30 @@ my_dict = {"key": "value", "num": 123}
       await customSandbox.destroy();
     });
 
-    it('should accept indexURL as array', async () => {
+    it('should reject indexURL from untrusted domain', async () => {
+      const configWithUrl: REPLConfig = {
+        ...defaultConfig,
+        indexURL: 'https://custom.cdn.com/pyodide/',
+      };
+      const customSandbox = createSandbox(configWithUrl, defaultBridges);
+
+      // Should throw an error for untrusted domain
+      await expect(customSandbox.initialize('test')).rejects.toThrow(
+        'Untrusted Pyodide URL domain: custom.cdn.com'
+      );
+    });
+
+    it('should reject indexURL array with untrusted domain', async () => {
       const configWithUrls: REPLConfig = {
         ...defaultConfig,
         indexURL: ['https://cdn1.com/pyodide/', 'https://cdn2.com/pyodide/'],
       };
       const customSandbox = createSandbox(configWithUrls, defaultBridges);
-      await customSandbox.initialize('test');
 
-      const result = await customSandbox.execute('print("ok")');
-      expect(result.error).toBeUndefined();
-
-      await customSandbox.destroy();
+      // Should throw an error for untrusted domain (uses first URL)
+      await expect(customSandbox.initialize('test')).rejects.toThrow(
+        'Untrusted Pyodide URL domain: cdn1.com'
+      );
     });
 
     it('should respect useWorker=false to force direct mode', async () => {

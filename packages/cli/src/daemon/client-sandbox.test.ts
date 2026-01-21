@@ -64,6 +64,7 @@ describe('DaemonClientSandbox', () => {
 
   /**
    * Helper to create a mock daemon server.
+   * Automatically handles 'auth' requests with success.
    */
   function createMockDaemon(
     handler: (request: {
@@ -86,6 +87,18 @@ describe('DaemonClientSandbox', () => {
             if (!line.trim()) continue;
             try {
               const request = JSON.parse(line);
+
+              // Auto-handle auth requests
+              if (request.method === 'auth') {
+                const response = {
+                  jsonrpc: '2.0',
+                  id: request.id,
+                  result: { authenticated: true },
+                };
+                socket.write(JSON.stringify(response) + '\n');
+                continue;
+              }
+
               const result = await handler(request);
               const response = {
                 jsonrpc: '2.0',
@@ -164,7 +177,15 @@ describe('DaemonClientSandbox', () => {
               if (!line.trim()) continue;
               const request = JSON.parse(line);
 
-              if (request.method === 'initialize') {
+              if (request.method === 'auth') {
+                // Handle auth request
+                const response = {
+                  jsonrpc: '2.0',
+                  id: request.id,
+                  result: { authenticated: true },
+                };
+                socket.write(JSON.stringify(response) + '\n');
+              } else if (request.method === 'initialize') {
                 // Send error response
                 const response = {
                   jsonrpc: '2.0',
@@ -378,7 +399,12 @@ describe('DaemonClientSandbox', () => {
               if (!line.trim()) continue;
               const request = JSON.parse(line);
 
-              if (request.method === 'initialize') {
+              if (request.method === 'auth') {
+                socket.write(
+                  JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { authenticated: true } }) +
+                    '\n'
+                );
+              } else if (request.method === 'initialize') {
                 socket.write(
                   JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { success: true } }) +
                     '\n'
@@ -446,7 +472,12 @@ describe('DaemonClientSandbox', () => {
               if (!line.trim()) continue;
               const request = JSON.parse(line);
 
-              if (request.method === 'initialize') {
+              if (request.method === 'auth') {
+                socket.write(
+                  JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { authenticated: true } }) +
+                    '\n'
+                );
+              } else if (request.method === 'initialize') {
                 socket.write(
                   JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { success: true } }) +
                     '\n'

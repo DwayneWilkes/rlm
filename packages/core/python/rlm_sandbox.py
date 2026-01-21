@@ -309,21 +309,38 @@ class RlmSandbox:
         """Create the search_context utility function."""
         import re
 
-        def search_context(pattern: str, window: int = 50) -> list:
+        def search_context(pattern: str, window: int = 50, max_results: int = 100) -> list:
             """
             Search for pattern in context and return matches with surrounding text.
 
             Args:
                 pattern: Regular expression pattern to search for
                 window: Number of characters to include before and after match
+                max_results: Maximum number of results to return (default: 100)
 
             Returns:
                 List of dictionaries with 'match' and 'context' keys
+
+            Raises:
+                ValueError: If pattern is too long or invalid
             """
+            # Security: Limit pattern length to prevent ReDoS attacks
+            MAX_PATTERN_LENGTH = 500
+            if len(pattern) > MAX_PATTERN_LENGTH:
+                raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+            # Validate and compile pattern
+            try:
+                compiled = re.compile(pattern, re.IGNORECASE)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern: {e}")
+
             context = self._globals.get("context", "")
             results = []
 
-            for match in re.finditer(pattern, context):
+            for match in compiled.finditer(context):
+                if len(results) >= max_results:
+                    break
                 start = max(0, match.start() - window)
                 end = min(len(context), match.end() + window)
                 results.append({

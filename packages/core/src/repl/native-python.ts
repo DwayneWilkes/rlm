@@ -17,6 +17,55 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 /**
+ * Environment variables that are safe to pass to the Python subprocess.
+ * We explicitly allowlist to prevent leaking sensitive values like API keys.
+ */
+const SAFE_ENV_VARS = [
+  'PATH',
+  'HOME',
+  'USER',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'TERM',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  'PYTHONPATH',
+  'PYTHONHOME',
+  'VIRTUAL_ENV',
+  // Windows-specific
+  'SYSTEMROOT',
+  'WINDIR',
+  'COMSPEC',
+  'PATHEXT',
+  'USERPROFILE',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'PROGRAMDATA',
+  'PROGRAMFILES',
+  'PROGRAMFILES(X86)',
+];
+
+/**
+ * Create a filtered environment for the Python subprocess.
+ * Only includes safe, non-sensitive environment variables.
+ */
+function createSafeEnvironment(): NodeJS.ProcessEnv {
+  const safeEnv: NodeJS.ProcessEnv = {
+    PYTHONUNBUFFERED: '1',
+  };
+
+  for (const key of SAFE_ENV_VARS) {
+    if (process.env[key] !== undefined) {
+      safeEnv[key] = process.env[key];
+    }
+  }
+
+  return safeEnv;
+}
+
+/**
  * Find the Python runner script location.
  * Looks in package directory under python/rlm_sandbox.py
  */
@@ -243,7 +292,7 @@ export class NativePythonSandbox implements Sandbox {
       try {
         this.process = spawn(this.pythonPath, [scriptPath], {
           stdio: ['pipe', 'pipe', 'pipe'],
-          env: { ...process.env, PYTHONUNBUFFERED: '1' },
+          env: createSafeEnvironment(),
         });
 
         // Handle stdout (JSON-RPC responses)

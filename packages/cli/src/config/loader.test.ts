@@ -4,6 +4,7 @@ import type { Config } from './schema.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { logger } from '../utils/logger.js';
 
 describe('Config Loader', () => {
   describe('loadConfig', () => {
@@ -69,6 +70,58 @@ budget:
       );
 
       await expect(loadConfig(configPath)).rejects.toThrow();
+    });
+
+    it('emits warning when loading JS config file', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn');
+      const configPath = path.join(tempDir, '.rlmrc.js');
+      await fs.writeFile(
+        configPath,
+        `module.exports = { provider: 'ollama', model: 'llama3.2' };`
+      );
+
+      await loadConfig(configPath);
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('executing JavaScript')
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('emits warning when loading CJS config file', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn');
+      const configPath = path.join(tempDir, '.rlmrc.cjs');
+      await fs.writeFile(
+        configPath,
+        `module.exports = { provider: 'anthropic', model: 'claude-3-opus' };`
+      );
+
+      await loadConfig(configPath);
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('executing JavaScript')
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('does not warn for YAML config files', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn');
+      const configPath = path.join(tempDir, '.rlmrc.yaml');
+      await fs.writeFile(
+        configPath,
+        `provider: ollama
+model: llama3.2
+`
+      );
+
+      await loadConfig(configPath);
+
+      // warn() may be called for other reasons, but not for JS execution
+      const jsWarningCalls = warnSpy.mock.calls.filter(
+        (call) => call[0]?.includes?.('executing JavaScript')
+      );
+      expect(jsWarningCalls).toHaveLength(0);
+      warnSpy.mockRestore();
     });
   });
 

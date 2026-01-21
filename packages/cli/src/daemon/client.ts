@@ -44,6 +44,8 @@ export interface IPCClientOptions {
   autoReconnect?: boolean;
   /** Connection timeout in milliseconds (default: 5000) */
   connectTimeout?: number;
+  /** Authentication token for daemon connection */
+  authToken?: string;
 }
 
 /**
@@ -74,9 +76,10 @@ interface PendingRequest {
  */
 export class IPCClient {
   private socketPath: string;
-  private options: Required<IPCClientOptions>;
+  private options: Required<Omit<IPCClientOptions, 'authToken'>> & { authToken?: string };
   private socket: net.Socket | null = null;
   private connected = false;
+  private authenticated = false;
   private requestId = 0;
   private pendingRequests: Map<number, PendingRequest> = new Map();
   private buffer = '';
@@ -93,20 +96,23 @@ export class IPCClient {
       requestTimeout: options.requestTimeout ?? 30000,
       autoReconnect: options.autoReconnect ?? false,
       connectTimeout: options.connectTimeout ?? 5000,
+      authToken: options.authToken,
     };
   }
 
   /**
    * Connect to the daemon.
    *
-   * @throws Error if connection fails
+   * If an auth token is configured, automatically authenticates after connecting.
+   *
+   * @throws Error if connection or authentication fails
    */
   async connect(): Promise<void> {
     if (this.connected && this.socket) {
       return;
     }
 
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       this.socket = net.createConnection(this.socketPath);
 
       const timeoutHandle = setTimeout(() => {
@@ -124,14 +130,16 @@ export class IPCClient {
       this.socket.on('error', (err) => {
         clearTimeout(timeoutHandle);
         this.connected = false;
+        this.authenticated = false;
         this.socket = null;
         reject(err);
       });
 
       this.socket.on('close', () => {
         this.connected = false;
+        this.authenticated = false;
         // Reject all pending requests
-        for (const [id, pending] of this.pendingRequests) {
+        for (const [, pending] of this.pendingRequests) {
           clearTimeout(pending.timeoutHandle);
           pending.reject(new Error('Connection closed'));
         }
@@ -142,6 +150,32 @@ export class IPCClient {
         this.handleData(data.toString());
       });
     });
+
+    // Authenticate if token is provided
+    if (this.options.authToken) {
+      await this.authenticate();
+    }
+  }
+
+  /**
+   * Authenticate with the daemon using the configured token.
+   *
+   * @throws Error if authentication fails
+   */
+  async authenticate(): Promise<void> {
+    if (!this.options.authToken) {
+      throw new Error('No auth token configured');
+    }
+
+    if (this.authenticated) {
+      return;
+    }
+
+    const result = await this.requestInternal('auth', { token: this.options.authToken });
+    if (!(result as { authenticated?: boolean })?.authenticated) {
+      throw new Error('Authentication failed');
+    }
+    this.authenticated = true;
   }
 
   /**
@@ -180,6 +214,14 @@ export class IPCClient {
       }
     }
 
+    return this.requestInternal(method, params);
+  }
+
+  /**
+   * Internal request method that doesn't auto-reconnect.
+   * Used by authenticate() during connection setup.
+   */
+  private async requestInternal(method: string, params?: Record<string, unknown>): Promise<unknown> {
     if (!this.connected || !this.socket) {
       throw new Error('Not connected');
     }

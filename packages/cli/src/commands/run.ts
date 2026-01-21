@@ -12,6 +12,7 @@ import { RLM } from '@rlm/core';
 import { loadConfig, mergeConfig, type Config } from '../config/index.js';
 import { detectBestBackend } from '../sandbox/index.js';
 import { createFormatter, type OutputFormat } from '../output/index.js';
+import { validateFilePathOrThrow } from '../utils/index.js';
 
 /**
  * Options for the run command.
@@ -87,7 +88,12 @@ export function createRunCommand(): Command {
         // Read context from file if provided
         let context = '';
         if (options.context) {
-          context = await readFile(options.context, 'utf-8');
+          // Validate the path for security
+          const { resolvedPath, warning } = validateFilePathOrThrow(options.context);
+          if (warning) {
+            console.warn(warning);
+          }
+          context = await readFile(resolvedPath, 'utf-8');
         }
 
         // Create formatter

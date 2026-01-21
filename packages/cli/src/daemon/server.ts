@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type { WorkerPool } from './pool.js';
+import { validateToken } from './auth.js';
 
 /**
  * JSON-RPC request interface.
@@ -45,6 +46,7 @@ const JSON_RPC_ERRORS = {
   METHOD_NOT_FOUND: -32601,
   INVALID_PARAMS: -32602,
   INTERNAL_ERROR: -32603,
+  UNAUTHORIZED: -32000,
 } as const;
 
 /**
@@ -87,16 +89,20 @@ export class DaemonServer {
   private server: net.Server | null = null;
   private running = false;
   private startTime: number = 0;
+  private authToken: string | null = null;
+  private authenticatedSockets: WeakSet<net.Socket> = new WeakSet();
 
   /**
    * Create a new DaemonServer.
    *
    * @param pool - WorkerPool to route requests to
    * @param socketPath - Path for Unix socket or named pipe
+   * @param authToken - Optional authentication token (if null, auth is disabled)
    */
-  constructor(pool: WorkerPool, socketPath: string) {
+  constructor(pool: WorkerPool, socketPath: string, authToken?: string) {
     this.pool = pool;
     this.socketPath = socketPath;
+    this.authToken = authToken ?? null;
   }
 
   /**
@@ -198,7 +204,7 @@ export class DaemonServer {
       for (const line of lines) {
         if (!line.trim()) continue;
 
-        const response = await this.handleMessage(line);
+        const response = await this.handleMessage(line, socket);
         socket.write(JSON.stringify(response) + '\n');
       }
     });
@@ -211,7 +217,7 @@ export class DaemonServer {
   /**
    * Handle a JSON-RPC message.
    */
-  private async handleMessage(message: string): Promise<JsonRpcResponse> {
+  private async handleMessage(message: string, socket: net.Socket): Promise<JsonRpcResponse> {
     let request: JsonRpcRequest;
 
     // Parse the message
@@ -240,6 +246,26 @@ export class DaemonServer {
       };
     }
 
+    // Handle authentication if token is configured
+    if (this.authToken !== null) {
+      // Allow 'auth' method without prior authentication
+      if (request.method === 'auth') {
+        return this.handleAuth(request, socket);
+      }
+
+      // Require authentication for all other methods
+      if (!this.authenticatedSockets.has(socket)) {
+        return {
+          jsonrpc: '2.0',
+          id: request.id,
+          error: {
+            code: JSON_RPC_ERRORS.UNAUTHORIZED,
+            message: 'Authentication required. Call "auth" method with token first.',
+          },
+        };
+      }
+    }
+
     // Route to appropriate handler
     try {
       const result = await this.handleRequest(request);
@@ -261,6 +287,31 @@ export class DaemonServer {
         },
       };
     }
+  }
+
+  /**
+   * Handle authentication request.
+   */
+  private handleAuth(request: JsonRpcRequest, socket: net.Socket): JsonRpcResponse {
+    const token = request.params?.token as string | undefined;
+
+    if (!token || !this.authToken || !validateToken(token, this.authToken)) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: JSON_RPC_ERRORS.UNAUTHORIZED,
+          message: 'Invalid authentication token',
+        },
+      };
+    }
+
+    this.authenticatedSockets.add(socket);
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: { authenticated: true },
+    };
   }
 
   /**

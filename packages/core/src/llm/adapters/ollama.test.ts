@@ -18,7 +18,53 @@ describe('OllamaAdapter', () => {
       expect(adapter).toBeDefined();
     });
 
-    it('should use provided baseUrl', () => {
+    it('should accept localhost URLs', () => {
+      expect(() => new OllamaAdapter({ baseUrl: 'http://localhost:11434' })).not.toThrow();
+      expect(() => new OllamaAdapter({ baseUrl: 'http://127.0.0.1:11434' })).not.toThrow();
+    });
+
+    it('should accept private network addresses', () => {
+      expect(() => new OllamaAdapter({ baseUrl: 'http://192.168.1.100:11434' })).not.toThrow();
+      expect(() => new OllamaAdapter({ baseUrl: 'http://10.0.0.5:11434' })).not.toThrow();
+      expect(() => new OllamaAdapter({ baseUrl: 'http://172.16.0.1:11434' })).not.toThrow();
+    });
+
+    it('should reject AWS metadata endpoint', () => {
+      expect(() => new OllamaAdapter({ baseUrl: 'http://169.254.169.254' }))
+        .toThrow(/cloud metadata endpoint/);
+    });
+
+    it('should reject link-local addresses', () => {
+      expect(() => new OllamaAdapter({ baseUrl: 'http://169.254.1.1:11434' }))
+        .toThrow(/restricted IP range/);
+    });
+
+    it('should reject Google metadata endpoint', () => {
+      expect(() => new OllamaAdapter({ baseUrl: 'http://metadata.google.internal' }))
+        .toThrow(/cloud metadata endpoint/);
+    });
+
+    it('should reject invalid URL format', () => {
+      expect(() => new OllamaAdapter({ baseUrl: 'not-a-url' }))
+        .toThrow(/Invalid Ollama URL/);
+    });
+
+    it('should reject non-http protocols', () => {
+      expect(() => new OllamaAdapter({ baseUrl: 'file:///etc/passwd' }))
+        .toThrow(/Only http\/https allowed/);
+      expect(() => new OllamaAdapter({ baseUrl: 'ftp://localhost:11434' }))
+        .toThrow(/Only http\/https allowed/);
+    });
+
+    it('should allow skipping URL validation when explicitly requested', () => {
+      // This is for advanced users who understand the risks
+      expect(() => new OllamaAdapter({
+        baseUrl: 'http://169.254.169.254',
+        skipUrlValidation: true,
+      })).not.toThrow();
+    });
+
+    it('should use provided baseUrl for allowed hosts', () => {
       const adapter = new OllamaAdapter({ baseUrl: 'http://custom:8080' });
       expect(adapter).toBeDefined();
     });
