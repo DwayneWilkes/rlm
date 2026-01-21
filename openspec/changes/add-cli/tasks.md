@@ -9,140 +9,140 @@ Each task follows the pattern:
 
 ---
 
-## Wave 1: Foundation (Parallel)
+## Wave 1: Foundation (Parallel) ✅ COMPLETE
 
 Three independent tracks that can run simultaneously.
 
-### Track A: Budget Context (Core)
+### Track A: Budget Context (Core) ✅
 
 **1A.1 getAllocatedBudgetDescription() method**
-- [ ] RED: Write test for `getAllocatedBudgetDescription(depth)` returning formatted budget string
-- [ ] GREEN: Implement method in BudgetController
-- [ ] REFACTOR: Clean up string formatting
+- [x] RED: Write test for `getAllocatedBudgetDescription(depth)` returning formatted budget string
+- [x] GREEN: Implement method in BudgetController
+- [x] REFACTOR: Clean up string formatting
 
 **1A.2 shouldDowngradeToLLMQuery() method**
-- [ ] RED: Write test for `shouldDowngradeToLLMQuery()` returning true when cost < $0.50 or iterations < 5
-- [ ] GREEN: Implement method in BudgetController
-- [ ] REFACTOR: Extract threshold constants
+- [x] RED: Write test for `shouldDowngradeToLLMQuery()` returning true when cost < $0.50 or iterations < 5
+- [x] GREEN: Implement method in BudgetController
+- [x] REFACTOR: Extract threshold constants
 
 **Track A Complete**
-- [ ] COMMIT: `feat(budget): add budget context methods for sub-RLM awareness`
+- [x] COMMIT: `feat(budget): add budget context methods for sub-RLM awareness` (192d4fd)
 
-### Track B: Python Runner Script
+### Track B: Python Runner Script ✅
 
 **1B.1 JSON-RPC server**
-- [ ] RED: Write pytest for JSON-RPC request/response parsing
-- [ ] GREEN: Implement `rlm_sandbox.py` with stdio JSON-RPC
-- [ ] REFACTOR: Extract protocol handling
+- [x] RED: Write pytest for JSON-RPC request/response parsing
+- [x] GREEN: Implement `rlm_sandbox.py` with stdio JSON-RPC
+- [x] REFACTOR: Extract protocol handling
 
 **1B.2 Code execution with capture**
-- [ ] RED: Write pytest for execute method capturing stdout/stderr
-- [ ] GREEN: Implement execute with StringIO capture
-- [ ] REFACTOR: Add proper exception handling
+- [x] RED: Write pytest for execute method capturing stdout/stderr
+- [x] GREEN: Implement execute with StringIO capture
+- [x] REFACTOR: Add proper exception handling
 
 **1B.3 Bridge callbacks**
-- [ ] RED: Write pytest for llm_query/rlm_query blocking bridge calls
-- [ ] GREEN: Implement bridge callbacks with JSON-RPC requests to host
-- [ ] REFACTOR: Unify callback pattern
+- [x] RED: Write pytest for llm_query/rlm_query blocking bridge calls
+- [x] GREEN: Implement bridge callbacks with JSON-RPC requests to host
+- [x] REFACTOR: Unify callback pattern
 
 **1B.4 Context injection**
-- [ ] RED: Write pytest verifying `context` variable available after init
-- [ ] GREEN: Implement context injection in initialize
-- [ ] REFACTOR: Add context type hints
+- [x] RED: Write pytest verifying `context` variable available after init
+- [x] GREEN: Implement context injection in initialize
+- [x] REFACTOR: Add context type hints
 
 **Track B Complete**
-- [ ] COMMIT: `feat(repl): add Python runner script with JSON-RPC protocol`
+- [x] COMMIT: `feat(repl): add Python runner script with JSON-RPC protocol` (d57139d)
 
-### Track C: CLI Package Setup
+### Track C: CLI Package Setup ✅
 
 **1C.1 Package structure**
-- [ ] RED: Write test that `@rlm/cli` can be imported
-- [ ] GREEN: Create package.json, tsconfig.json, tsup.config.ts
-- [ ] REFACTOR: Align with @rlm/core patterns
+- [x] RED: Write test that `@rlm/cli` can be imported
+- [x] GREEN: Create package.json, tsconfig.json, tsup.config.ts
+- [x] REFACTOR: Align with @rlm/core patterns
 
 **1C.2 Workspace integration**
-- [ ] RED: Write test that `pnpm build` includes cli
-- [ ] GREEN: Add cli to pnpm-workspace.yaml
-- [ ] REFACTOR: Verify dependency resolution
+- [x] RED: Write test that `pnpm build` includes cli
+- [x] GREEN: Add cli to pnpm-workspace.yaml
+- [x] REFACTOR: Verify dependency resolution
 
 **1C.3 Entry point**
-- [ ] RED: Write test that `bin/rlm.ts` exports CLI runner
-- [ ] GREEN: Create bin/rlm.ts with shebang and main()
-- [ ] REFACTOR: Add error boundary
+- [x] RED: Write test that `bin/rlm.ts` exports CLI runner
+- [x] GREEN: Create bin/rlm.ts with shebang and main()
+- [x] REFACTOR: Add error boundary
 
 **Track C Complete**
-- [ ] COMMIT: `feat(cli): scaffold @rlm/cli package structure`
+- [x] COMMIT: `feat(cli): scaffold @rlm/cli package structure` (844ddf9)
 
 ---
 
-## Wave 2: Core Integration (Parallel)
+## Wave 2: Core Integration (Parallel) ✅ COMPLETE
 
 Depends on Wave 1 completion.
 
-### Track A: Sub-RLM Budget Awareness (depends on 1A)
+### Track A: Sub-RLM Budget Awareness (depends on 1A) ✅
 
 **2A.1 Enhanced sub-RLM system prompt**
-- [ ] RED: Write test for sub-RLM prompt including depth, budget, guidelines
-- [ ] GREEN: Create prompt template function
-- [ ] REFACTOR: Extract prompt sections
+- [x] RED: Write test for sub-RLM prompt including depth, budget, guidelines
+- [x] GREEN: Create prompt template function
+- [x] REFACTOR: Extract prompt sections
 
 **2A.2 Budget context injection in Executor**
-- [ ] RED: Write test that handleRLMQuery injects budget context
-- [ ] GREEN: Update Executor.handleRLMQuery
-- [ ] REFACTOR: Centralize prompt building
+- [x] RED: Write test that handleRLMQuery injects budget context
+- [x] GREEN: Update Executor.buildSystemPrompt for depth > 0
+- [x] REFACTOR: Centralize prompt building
 
 **2A.3 Auto-downgrade to llm_query**
-- [ ] RED: Write test that rlm_query downgrades when budget low
-- [ ] GREEN: Add downgrade check in handleRLMQuery
-- [ ] REFACTOR: Make threshold configurable
+- [x] RED: Write test that rlm_query downgrades when budget low
+- [x] GREEN: Add downgrade check via shouldDowngradeToLLMQuery()
+- [x] REFACTOR: Threshold constants in BudgetController
 
 **Track A Complete**
-- [ ] COMMIT: `feat(engine): add sub-RLM budget awareness and auto-downgrade`
+- [x] COMMIT: `feat(executor): add sub-RLM budget awareness` (06363d3)
 
-### Track B: Native Sandbox TypeScript (depends on 1B)
+### Track B: Native Sandbox TypeScript (depends on 1B) ✅
 
 **2B.1 NativePythonSandbox class**
-- [ ] RED: Write test for NativePythonSandbox implementing ISandbox
-- [ ] GREEN: Create class with initialize/execute/destroy/getVariable
-- [ ] REFACTOR: Extract common sandbox behavior
+- [x] RED: Write test for NativePythonSandbox implementing Sandbox interface
+- [x] GREEN: Create class with initialize/execute/destroy/getVariable
+- [x] REFACTOR: Extract common sandbox behavior
 
 **2B.2 JSON-RPC client**
-- [ ] RED: Write test for JSON-RPC over child_process stdio
-- [ ] GREEN: Implement request/response with ID tracking
-- [ ] REFACTOR: Add timeout handling
+- [x] RED: Write test for JSON-RPC over child_process stdio
+- [x] GREEN: Implement request/response with ID tracking
+- [x] REFACTOR: Add timeout handling
 
 **2B.3 Bridge callback handlers**
-- [ ] RED: Write test for handling bridge:llm and bridge:rlm methods
-- [ ] GREEN: Implement callback routing to onLLMQuery/onRLMQuery
-- [ ] REFACTOR: Type-safe callback dispatch
+- [x] RED: Write test for handling bridge:llm and bridge:rlm methods
+- [x] GREEN: Implement callback routing to onLLMQuery/onRLMQuery
+- [x] REFACTOR: Type-safe callback dispatch
 
-**2B.4 Python availability detection**
-- [ ] RED: Write test for isPythonAvailable() returning boolean
-- [ ] GREEN: Implement `python --version` check
-- [ ] REFACTOR: Cache availability result
+**2B.4 Python utility functions**
+- [x] RED: Write test for chunk_text and search_context
+- [x] GREEN: Add utilities to Python sandbox
+- [x] REFACTOR: Support optional context in rlm_query
 
 **Track B Complete**
-- [ ] COMMIT: `feat(repl): add NativePythonSandbox with JSON-RPC client`
+- [x] COMMIT: `feat(repl): add NativePythonSandbox for high-performance execution` (23f7a8d)
 
-### Track C: Config Loader (depends on 1C)
+### Track C: Config Loader (depends on 1C) ✅
 
 **2C.1 Config schema**
-- [ ] RED: Write test for Zod schema validating config shape
-- [ ] GREEN: Create schema.ts with RLMConfigSchema
-- [ ] REFACTOR: Add default values
+- [x] RED: Write test for Zod schema validating config shape
+- [x] GREEN: Create schema.ts with ConfigSchema
+- [x] REFACTOR: Add default values
 
 **2C.2 Cosmiconfig integration**
-- [ ] RED: Write test for loading from .rlmrc.yaml
-- [ ] GREEN: Create loader.ts with cosmiconfig explorer
-- [ ] REFACTOR: Add search path customization
+- [x] RED: Write test for loading from .rlmrc.yaml
+- [x] GREEN: Create loader.ts with cosmiconfig explorer
+- [x] REFACTOR: Add search path customization
 
 **2C.3 Config merge**
-- [ ] RED: Write test for CLI flags overriding file config
-- [ ] GREEN: Implement deep merge with flag precedence
-- [ ] REFACTOR: Type-safe merge function
+- [x] RED: Write test for CLI flags overriding file config
+- [x] GREEN: Implement deep merge with flag precedence
+- [x] REFACTOR: Type-safe merge function
 
 **Track C Complete**
-- [ ] COMMIT: `feat(cli): add config loader with cosmiconfig and Zod`
+- [x] COMMIT: `feat(cli): add config loader with cosmiconfig and Zod` (b7ac13c)
 
 ---
 
