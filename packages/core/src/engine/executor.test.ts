@@ -310,15 +310,17 @@ describe('Executor', () => {
       ]);
       router.register('test', adapter);
 
-      const executor = new Executor(config, router);
+      // Create executor at depth 1, with maxDepth: 1 - subcalls blocked because already at max
+      // Note: maxDepth: 0 now means unlimited, so we use maxDepth: 1 with executor at depth 1
+      const executor = new Executor(config, router, 1); // Start at depth 1
       const result = await executor.execute({
         task: 'Main task',
         context: 'Main context',
-        budget: { maxDepth: 0 }, // Block all subcalls
+        budget: { maxDepth: 1 }, // At depth 1 with maxDepth 1, subcalls are blocked
       });
 
       expect(result.success).toBe(true);
-      // The directAnswer should have been called because maxDepth: 0 blocks subcalls
+      // The directAnswer should have been called because maxDepth: 1 blocks subcalls at depth 1
       // Verify the adapter was called with a direct answer prompt (from directAnswer method)
       const calls = (adapter.complete as ReturnType<typeof vi.fn>).mock.calls;
       const directAnswerCall = calls.find(

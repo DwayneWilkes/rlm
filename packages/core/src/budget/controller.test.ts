@@ -175,17 +175,50 @@ describe('BudgetController', () => {
       });
 
       it('does not check depth limit for iteration operations', () => {
-        const controller = new BudgetController({ maxDepth: 0, maxIterations: 10 });
+        const controller = new BudgetController({ maxDepth: 1, maxIterations: 10 });
 
         // Iteration should not be blocked by depth limit
         expect(controller.canProceed('iteration')).toBe(true);
       });
 
       it('uses depth 0 when depth is not provided for subcall', () => {
+        const controller = new BudgetController({ maxDepth: 1 });
+
+        // depth=0 should be under maxDepth=1
+        expect(controller.canProceed('subcall')).toBe(true);
+      });
+    });
+
+    describe('unlimited depth (maxDepth: 0)', () => {
+      it('allows subcalls at any depth when maxDepth is 0', () => {
         const controller = new BudgetController({ maxDepth: 0 });
 
-        // depth=0 should hit maxDepth=0
-        expect(controller.canProceed('subcall')).toBe(false);
+        // maxDepth: 0 means unlimited - should allow any depth
+        expect(controller.canProceed('subcall', 0)).toBe(true);
+        expect(controller.canProceed('subcall', 1)).toBe(true);
+        expect(controller.canProceed('subcall', 10)).toBe(true);
+        expect(controller.canProceed('subcall', 100)).toBe(true);
+      });
+
+      it('still respects other budget limits when depth is unlimited', () => {
+        const controller = new BudgetController({ maxDepth: 0, maxCost: 1.0 });
+        controller.record({ cost: 1.0 }); // Exhaust cost
+
+        // Depth is unlimited, but cost is exhausted
+        expect(controller.canProceed('subcall', 0)).toBe(false);
+      });
+
+      it('allows deep recursion bounded only by cost/time/iterations', () => {
+        const controller = new BudgetController({
+          maxDepth: 0,
+          maxCost: 10.0,
+          maxIterations: 100,
+        });
+
+        // Can recurse very deep as long as other budgets allow
+        for (let depth = 0; depth < 50; depth++) {
+          expect(controller.canProceed('subcall', depth)).toBe(true);
+        }
       });
     });
   });
@@ -399,6 +432,31 @@ describe('BudgetController', () => {
 
         const subBudget = controller.getSubBudget(0);
         expect(subBudget.maxIterations).toBe(8); // ceil(15 * 0.5) = 8
+      });
+    });
+
+    describe('unlimited depth preservation', () => {
+      it('preserves maxDepth: 0 for subcalls (unlimited stays unlimited)', () => {
+        const controller = new BudgetController({ maxDepth: 0 });
+
+        const subBudget = controller.getSubBudget(0);
+        expect(subBudget.maxDepth).toBe(0); // Stays 0 (unlimited)
+
+        const subBudget2 = controller.getSubBudget(5);
+        expect(subBudget2.maxDepth).toBe(0); // Still 0 at any depth
+      });
+
+      it('still allocates other resources normally with unlimited depth', () => {
+        const controller = new BudgetController({
+          maxDepth: 0,
+          maxCost: 10.0,
+          maxIterations: 30,
+        });
+
+        const subBudget = controller.getSubBudget(0);
+        expect(subBudget.maxDepth).toBe(0); // Unlimited preserved
+        expect(subBudget.maxCost).toBe(5.0); // 50% of 10
+        expect(subBudget.maxIterations).toBe(15); // 50% of 30
       });
     });
   });

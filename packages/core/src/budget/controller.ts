@@ -109,7 +109,13 @@ export class BudgetController {
     ) {
       return false;
     }
-    if (operation === 'subcall' && (depth ?? 0) >= this.budget.maxDepth) {
+    // maxDepth: 0 means unlimited depth - skip depth check
+    // Only enforce depth limit when maxDepth > 0
+    if (
+      operation === 'subcall' &&
+      this.budget.maxDepth > 0 &&
+      (depth ?? 0) >= this.budget.maxDepth
+    ) {
       return false;
     }
 
@@ -167,6 +173,9 @@ export class BudgetController {
    * Allocates 50% of remaining resources (cost, tokens, time) and
    * reduces maxDepth by (depth + 1). maxIterations is 50% of original.
    *
+   * Special case: maxDepth: 0 means unlimited depth - subcalls inherit
+   * unlimited depth (0) rather than decrementing.
+   *
    * @param depth - Current recursion depth
    * @returns Partial budget for the subcall
    */
@@ -176,7 +185,11 @@ export class BudgetController {
       maxCost: remaining.cost * 0.5,
       maxTokens: remaining.tokens * 0.5,
       maxTime: remaining.time * 0.5,
-      maxDepth: Math.max(0, this.budget.maxDepth - depth - 1),
+      // maxDepth: 0 means unlimited - preserve it for subcalls
+      maxDepth:
+        this.budget.maxDepth === 0
+          ? 0
+          : Math.max(0, this.budget.maxDepth - depth - 1),
       maxIterations: Math.ceil(this.budget.maxIterations * 0.5),
     };
   }
