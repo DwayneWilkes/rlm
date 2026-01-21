@@ -8,13 +8,14 @@
  *
  * @example
  * ```typescript
- * import { main, logger, setLogLevel } from '@rlm/cli';
+ * import { createCLI, logger, setLogLevel } from '@rlm/cli';
  *
  * // Set logging level
  * setLogLevel('debug');
  *
- * // Run CLI with arguments
- * await main(['run', 'task.md', '-o', 'output.md']);
+ * // Create and run CLI
+ * const cli = createCLI();
+ * cli.parse(process.argv);
  * ```
  */
 
@@ -22,6 +23,14 @@ import { logger, setLogLevel, getLogLevel, type LogLevel } from './utils/logger.
 
 // Re-export logger utilities
 export { logger, setLogLevel, getLogLevel, type LogLevel };
+
+// Re-export command utilities
+export {
+  createCLI,
+  createRunCommand,
+  createConfigCommand,
+  createDaemonCommand,
+} from './commands/index.js';
 
 // Re-export config utilities
 export {
@@ -81,9 +90,9 @@ export {
  * ```
  */
 export async function main(args: string[]): Promise<void> {
+  const { createCLI } = await import('./commands/index.js');
   logger.debug('CLI main() called', { args });
 
-  // Placeholder implementation - will be expanded in future waves
-  // Currently just validates that the function exists and is callable
-  void args;
+  const cli = createCLI();
+  await cli.parseAsync(['node', 'rlm', ...args]);
 }

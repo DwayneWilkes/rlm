@@ -4,20 +4,35 @@
  * Following TDD: These tests are written FIRST before implementation.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import * as rlmCli from './index.js';
 
 describe('@rlm/cli exports', () => {
   describe('main function', () => {
+    let processExitSpy: ReturnType<typeof vi.spyOn>;
+    let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      processExitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+      consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      processExitSpy.mockRestore();
+      consoleLogSpy.mockRestore();
+    });
+
     it('should export a main function', () => {
       expect(rlmCli.main).toBeDefined();
       expect(typeof rlmCli.main).toBe('function');
     });
 
-    it('main should return a Promise', () => {
+    it('main should return a Promise', async () => {
       // main() should be an async function that can be called with args
-      const result = rlmCli.main([]);
+      // Using --help to get a predictable exit
+      const result = rlmCli.main(['--help']);
       expect(result).toBeInstanceOf(Promise);
+      await result;
     });
   });
 

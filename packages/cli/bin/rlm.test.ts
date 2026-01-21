@@ -4,8 +4,8 @@
  * Following TDD: These tests verify the bin/rlm.ts entry point exists and works.
  */
 
-import { describe, it, expect } from 'vitest';
-import { existsSync } from 'node:fs';
+import { describe, it, expect, vi } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,11 +17,24 @@ describe('bin/rlm entry point', () => {
     expect(existsSync(binPath)).toBe(true);
   });
 
-  it('should be able to import the entry point', async () => {
-    // Dynamically import the entry point to verify it's valid
-    const entryModule = await import('./rlm.js');
-    // The module should export nothing (it runs on import or has side effects)
-    // or it can export the main function for testing
-    expect(entryModule).toBeDefined();
+  it('should have correct shebang and imports', () => {
+    const binPath = resolve(__dirname, 'rlm.ts');
+    const content = readFileSync(binPath, 'utf-8');
+
+    // Verify the file has the correct shebang
+    expect(content.startsWith('#!/usr/bin/env node')).toBe(true);
+
+    // Verify it imports createCLI
+    expect(content).toContain("import { createCLI } from '../src/commands/cli.js'");
+
+    // Verify it calls cli.parse
+    expect(content).toContain('cli.parse(process.argv)');
+  });
+
+  it('should have createCLI available for import', async () => {
+    // Test that the command module is properly set up
+    const { createCLI } = await import('../src/commands/cli.js');
+    expect(createCLI).toBeDefined();
+    expect(typeof createCLI).toBe('function');
   });
 });
