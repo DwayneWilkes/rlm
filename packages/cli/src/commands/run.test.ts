@@ -35,12 +35,18 @@ vi.mock('../utils/index.js', () => ({
   validateFilePathOrThrow: vi.fn((path: string) => ({ resolvedPath: path, warning: undefined })),
 }));
 
+// Mock pdf-parse
+vi.mock('pdf-parse', () => ({
+  PDFParse: vi.fn(),
+}));
+
 import { loadConfig, mergeConfig } from '../config/index.js';
 import { createSandbox, detectBestBackend } from '../sandbox/index.js';
 import { createFormatter } from '../output/index.js';
 import { RLM } from '@rlm/core';
 import { readFile } from 'node:fs/promises';
 import { validateFilePathOrThrow } from '../utils/index.js';
+import { PDFParse } from 'pdf-parse';
 
 const mockLoadConfig = vi.mocked(loadConfig);
 const mockMergeConfig = vi.mocked(mergeConfig);
@@ -50,6 +56,7 @@ const mockCreateFormatter = vi.mocked(createFormatter);
 const mockRLM = vi.mocked(RLM);
 const mockReadFile = vi.mocked(readFile);
 const mockValidateFilePath = vi.mocked(validateFilePathOrThrow);
+const mockPDFParse = vi.mocked(PDFParse);
 
 describe('createRunCommand', () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -327,6 +334,126 @@ describe('createRunCommand', () => {
 
       expect(consoleErrorSpy).toHaveBeenCalledWith('Unexpected error: String error message');
       expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
+
+    describe('PDF context files', () => {
+      it('should extract text from PDF files', async () => {
+        const mockPdfBuffer = Buffer.from('fake pdf content');
+        const mockTextResult = {
+          pages: [
+            { text: 'Page 1 content' },
+            { text: 'Page 2 content' },
+          ],
+        };
+        const mockDestroy = vi.fn();
+        const mockGetText = vi.fn().mockResolvedValue(mockTextResult);
+
+        // Return mock instance from constructor
+        mockPDFParse.mockImplementation(() => ({
+          getText: mockGetText,
+          destroy: mockDestroy,
+        } as any));
+
+        mockReadFile.mockResolvedValueOnce(mockPdfBuffer);
+        mockExecute.mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          trace: {},
+          usage: {},
+          warnings: [],
+        });
+
+        const program = new Command().addCommand(createRunCommand());
+        await program.parseAsync(['run', 'Summarize', '--context', '/path/to/document.pdf'], { from: 'user' });
+
+        // Verify PDF was read as buffer
+        expect(mockReadFile).toHaveBeenCalledWith('/path/to/document.pdf');
+        // Verify PDFParse was instantiated with the buffer
+        expect(mockPDFParse).toHaveBeenCalledWith({ data: mockPdfBuffer });
+        // Verify getText was called
+        expect(mockGetText).toHaveBeenCalled();
+        // Verify destroy was called
+        expect(mockDestroy).toHaveBeenCalled();
+        // Verify context was passed to execute with joined pages
+        expect(mockExecute).toHaveBeenCalledWith(
+          expect.objectContaining({
+            context: 'Page 1 content\n\nPage 2 content',
+          })
+        );
+      });
+
+      it('should log PDF extraction progress', async () => {
+        const mockPdfBuffer = Buffer.from('fake pdf content');
+        const mockTextResult = {
+          pages: [
+            { text: 'Page 1' },
+            { text: 'Page 2' },
+            { text: 'Page 3' },
+          ],
+        };
+
+        mockPDFParse.mockImplementation(() => ({
+          getText: vi.fn().mockResolvedValue(mockTextResult),
+          destroy: vi.fn(),
+        } as any));
+
+        mockReadFile.mockResolvedValueOnce(mockPdfBuffer);
+        mockExecute.mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          trace: {},
+          usage: {},
+          warnings: [],
+        });
+
+        const program = new Command().addCommand(createRunCommand());
+        await program.parseAsync(['run', 'Task', '--context', '/file.PDF'], { from: 'user' });
+
+        // Verify progress messages were logged
+        expect(consoleErrorSpy).toHaveBeenCalledWith('[rlm] Extracting text from PDF...');
+        expect(consoleErrorSpy).toHaveBeenCalledWith('[rlm] Extracted 3 pages');
+      });
+
+      it('should handle uppercase PDF extension', async () => {
+        const mockPdfBuffer = Buffer.from('fake pdf');
+        mockPDFParse.mockImplementation(() => ({
+          getText: vi.fn().mockResolvedValue({ pages: [{ text: 'content' }] }),
+          destroy: vi.fn(),
+        } as any));
+
+        mockReadFile.mockResolvedValueOnce(mockPdfBuffer);
+        mockExecute.mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          trace: {},
+          usage: {},
+          warnings: [],
+        });
+
+        const program = new Command().addCommand(createRunCommand());
+        await program.parseAsync(['run', 'Task', '--context', '/file.PDF'], { from: 'user' });
+
+        // Should still use PDFParse for uppercase extension
+        expect(mockPDFParse).toHaveBeenCalled();
+      });
+
+      it('should read non-PDF files as utf-8 text', async () => {
+        mockReadFile.mockResolvedValueOnce('plain text content');
+        mockExecute.mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          trace: {},
+          usage: {},
+          warnings: [],
+        });
+
+        const program = new Command().addCommand(createRunCommand());
+        await program.parseAsync(['run', 'Task', '--context', '/file.txt'], { from: 'user' });
+
+        // Should read as utf-8, not use PDFParse
+        expect(mockReadFile).toHaveBeenCalledWith('/file.txt', 'utf-8');
+        expect(mockPDFParse).not.toHaveBeenCalled();
+      });
     });
   });
 });

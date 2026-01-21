@@ -9,6 +9,7 @@
 import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { RLM } from '@rlm/core';
+import { PDFParse } from 'pdf-parse';
 import { loadConfig, mergeConfig, type Config } from '../config/index.js';
 import { detectBestBackend } from '../sandbox/index.js';
 import { createFormatter, type OutputFormat } from '../output/index.js';
@@ -93,7 +94,21 @@ export function createRunCommand(): Command {
           if (warning) {
             console.warn(warning);
           }
-          context = await readFile(resolvedPath, 'utf-8');
+
+          // Handle different file types
+          const ext = resolvedPath.toLowerCase().split('.').pop();
+          if (ext === 'pdf') {
+            // Extract text from PDF
+            console.error('[rlm] Extracting text from PDF...');
+            const dataBuffer = await readFile(resolvedPath);
+            const parser = new PDFParse({ data: dataBuffer });
+            const textResult = await parser.getText();
+            context = textResult.pages.map((p: { text: string }) => p.text).join('\n\n');
+            console.error(`[rlm] Extracted ${textResult.pages.length} pages`);
+            await parser.destroy();
+          } else {
+            context = await readFile(resolvedPath, 'utf-8');
+          }
         }
 
         // Create formatter
@@ -103,6 +118,7 @@ export function createRunCommand(): Command {
         const rlm = new RLM({
           provider: config.provider,
           model: config.model,
+          subcallModel: config.subcallModel,
           defaultBudget: {
             maxCost: config.budget.maxCost,
             maxIterations: config.budget.maxIterations,
@@ -114,6 +130,12 @@ export function createRunCommand(): Command {
             maxOutputLength: 50000,
           },
         });
+
+        // Show progress
+        console.error(`[rlm] Executing task with ${config.provider}/${config.model}...`);
+        if (context) {
+          console.error(`[rlm] Context: ${context.length.toLocaleString()} characters`);
+        }
 
         // Execute the task
         const result = await rlm.execute({
