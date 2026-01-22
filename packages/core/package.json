@@ -17,8 +17,8 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
     "dev": "tsup src/index.ts --format esm --dts --watch",
-    "test": "vitest",
-    "test:run": "vitest run --reporter=basic",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:ci": "vitest run --reporter=json --outputFile=test-results.json",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build"

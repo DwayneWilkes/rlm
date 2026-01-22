@@ -310,6 +310,18 @@ ENVIRONMENT:
 - \`count_matches(pattern)\`: Fast count of regex matches
 - \`extract_json(text)\`: Safely extract JSON from text
 - \`extract_sections(pattern)\`: Extract sections by header pattern
+- \`find_line(pattern)\`: Find lines matching regex, returns [(line_num, content), ...]
+- \`count_lines(pattern?)\`: Count total lines, or lines matching pattern
+- \`get_line(n)\`: Get content of line n (1-indexed)
+- \`quote_match(pattern)\`: Return first match of pattern in context
+
+ACCURACY (CRITICAL):
+- Check the content of the 'context' variable to avoid hallucinations
+- ALWAYS quote exact text when referencing code or data
+- Use find_line() to verify line numbers before citing them
+- Use count_lines() for accurate counts, not estimates
+- NEVER assume values from memory - verify against actual context
+- If you cannot find evidence, say "not found in context"
 
 BUDGET:
 - Remaining: $${remaining.cost.toFixed(2)} | ${remaining.iterations} iterations | depth ${this.depth}/${budget.getRemaining().depth + this.depth}
@@ -337,6 +349,12 @@ STRATEGY:
 3. Use count_matches() before full search to estimate scope
 4. For complex sub-tasks, use rlm_query() - it has its own REPL
 5. Build answers incrementally in variables
+6. VERIFY claims before stating them:
+   # Bad: "The method query() on line 41..."
+   # Good: Use find_line() first, then cite verified results
+   matches = find_line("def.*complete")
+   # Output: [(87, "  async def complete(request):")]
+   # Then cite: "The method complete() on line 87"
 
 TERMINATION (use when ready):
 - FINAL(your answer here) - Direct answer

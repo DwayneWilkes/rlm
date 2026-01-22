@@ -398,6 +398,78 @@ async function evaluateExpression(expr: string): Promise<unknown> {
     return sections;
   }
 
+  // find_line call
+  const findLineMatch = expr.match(/^find_line\((?:r)?"([^"]+)"\)$/);
+  if (findLineMatch) {
+    const pattern = findLineMatch[1];
+    const context = pythonState.context;
+    const lines = context.split('\n');
+    const regex = new RegExp(pattern, 'i');
+    const results: Array<[number, string]> = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (regex.test(lines[i])) {
+        results.push([i + 1, lines[i]]);
+      }
+    }
+    return results;
+  }
+
+  // count_lines call (with or without pattern)
+  const countLinesPatternMatch = expr.match(/^count_lines\((?:r)?"([^"]+)"\)$/);
+  const countLinesNoArgMatch = expr.match(/^count_lines\(\)$/);
+  if (countLinesPatternMatch) {
+    const pattern = countLinesPatternMatch[1];
+    const context = pythonState.context;
+    const lines = context.split('\n');
+    const regex = new RegExp(pattern, 'i');
+    return lines.filter(line => regex.test(line)).length;
+  }
+  if (countLinesNoArgMatch) {
+    const context = pythonState.context;
+    return context.split('\n').length;
+  }
+
+  // get_line call
+  const getLineMatch = expr.match(/^get_line\((\d+)\)$/);
+  if (getLineMatch) {
+    const lineNum = parseInt(getLineMatch[1], 10);
+    const context = pythonState.context;
+    const lines = context.split('\n');
+    if (lineNum < 1 || lineNum > lines.length) {
+      return '';
+    }
+    return lines[lineNum - 1];
+  }
+
+  // quote_match call
+  const quoteMatchMatch = expr.match(/^quote_match\((?:r)?"([^"]+)"(?:,\s*max_length=(\d+))?\)$/);
+  if (quoteMatchMatch) {
+    const pattern = quoteMatchMatch[1];
+    const maxLength = quoteMatchMatch[2] ? parseInt(quoteMatchMatch[2], 10) : 100;
+    const context = pythonState.context;
+    const regex = new RegExp(pattern, 'i');
+    const match = context.match(regex);
+    if (match) {
+      const result = match[0];
+      if (result.length > maxLength) {
+        return result.slice(0, maxLength) + '...';
+      }
+      return result;
+    }
+    return null;
+  }
+
+  // Array access like chunks[0], results[0]['match'], matches[0][0], matches[0][1]
+  // Handle tuple indexing: matches[0][0] for first element of tuple at index 0
+  const tupleAccess = expr.match(/^(\w+)\[(\d+)\]\[(\d+)\]$/);
+  if (tupleAccess) {
+    const arr = pythonState.variables.get(tupleAccess[1]) as unknown[];
+    if (!arr) return undefined;
+    const tuple = arr[parseInt(tupleAccess[2], 10)] as unknown[];
+    if (!tuple) return undefined;
+    return tuple[parseInt(tupleAccess[3], 10)];
+  }
+
   // Array access like chunks[0], results[0]['match']
   const arrayAccess = expr.match(/^(\w+)\[(\d+)\](?:\['(\w+)'\])?(?:\[:(\d+)\])?$/);
   if (arrayAccess) {
@@ -981,6 +1053,218 @@ print(len(results))
 
         expect(result.error).toBeUndefined();
         expect(result.stdout).toContain('0');
+      });
+    });
+
+    describe('find_line function', () => {
+      it('should return line numbers and content for matching lines', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize(`line one
+line two with target
+line three
+another target line`);
+
+        const result = await testSandbox.execute(`
+matches = find_line("target")
+print(len(matches))
+print(matches[0][0])
+print(matches[0][1])
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('2'); // 2 matches
+        expect(result.stdout).toContain('line two with target');
+
+        await testSandbox.destroy();
+      });
+
+      it('should return 1-indexed line numbers', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize(`first line
+second line
+third line`);
+
+        const result = await testSandbox.execute(`
+matches = find_line("first")
+print(matches[0][0])
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout.trim()).toBe('1');
+
+        await testSandbox.destroy();
+      });
+
+      it('should return empty list when no matches', async () => {
+        const result = await sandbox.execute(`
+matches = find_line("nonexistent_xyz")
+print(len(matches))
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout.trim()).toBe('0');
+      });
+
+      it('should support regex patterns', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize(`def foo():
+    pass
+def bar():
+    return 1`);
+
+        const result = await testSandbox.execute(`
+matches = find_line(r"def \\w+")
+print(len(matches))
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout.trim()).toBe('2');
+
+        await testSandbox.destroy();
+      });
+    });
+
+    describe('count_lines function', () => {
+      it('should return total line count when no pattern', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize(`line 1
+line 2
+line 3
+line 4
+line 5`);
+
+        const result = await testSandbox.execute(`
+count = count_lines()
+print(count)
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout.trim()).toBe('5');
+
+        await testSandbox.destroy();
+      });
+
+      it('should return count of matching lines when pattern given', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize(`import os
+import sys
+def main():
+    pass
+import json`);
+
+        const result = await testSandbox.execute(`
+count = count_lines("import")
+print(count)
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout.trim()).toBe('3');
+
+        await testSandbox.destroy();
+      });
+
+      it('should return 0 when pattern matches nothing', async () => {
+        const result = await sandbox.execute(`
+count = count_lines("nonexistent_xyz")
+print(count)
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout.trim()).toBe('0');
+      });
+    });
+
+    describe('get_line function', () => {
+      it('should return content of specific line (1-indexed)', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize(`first line
+second line
+third line`);
+
+        const result = await testSandbox.execute(`
+line = get_line(2)
+print(line)
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout.trim()).toBe('second line');
+
+        await testSandbox.destroy();
+      });
+
+      it('should return empty string for out-of-bounds line number', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize(`only one line`);
+
+        const result = await testSandbox.execute(`
+line = get_line(999)
+print(repr(line))
+`);
+
+        expect(result.error).toBeUndefined();
+        // Mock returns JSON-style "", Python would return ''
+        expect(result.stdout).toMatch(/['"]{2}/);
+
+        await testSandbox.destroy();
+      });
+
+      it('should return empty string for line 0', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize(`some content`);
+
+        const result = await testSandbox.execute(`
+line = get_line(0)
+print(repr(line))
+`);
+
+        expect(result.error).toBeUndefined();
+        // Mock returns JSON-style "", Python would return ''
+        expect(result.stdout).toMatch(/['"]{2}/);
+
+        await testSandbox.destroy();
+      });
+    });
+
+    describe('quote_match function', () => {
+      it('should return first match of pattern', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize('The value is max_tokens: 8192, other stuff');
+
+        const result = await testSandbox.execute(`
+match = quote_match("max_tokens: \\d+")
+print(match)
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout.trim()).toBe('max_tokens: 8192');
+
+        await testSandbox.destroy();
+      });
+
+      it('should return None when no match', async () => {
+        const result = await sandbox.execute(`
+match = quote_match("nonexistent_xyz")
+print(match is None)
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('True');
+      });
+
+      it('should truncate long matches with max_length', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize('This is a very long string that should be truncated when matched');
+
+        const result = await testSandbox.execute(`
+match = quote_match("This is a very long string", max_length=15)
+print(match)
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('...');
+        expect(result.stdout.trim().length).toBeLessThan(25);
+
+        await testSandbox.destroy();
       });
     });
   });

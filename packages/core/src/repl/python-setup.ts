@@ -228,6 +228,132 @@ def extract_sections(header_pattern: str) -> list:
 
     return sections
 
+def find_line(pattern: str) -> list:
+    """
+    Find lines in context matching a regex pattern.
+
+    Use this to verify line numbers before citing them in your analysis.
+    Returns 1-indexed line numbers to match how humans reference code.
+
+    Args:
+        pattern: Regex pattern to search for
+
+    Returns:
+        List of tuples: [(line_number, line_content), ...]
+
+    Raises:
+        ValueError: If pattern is too long or invalid
+
+    Example:
+        >>> find_line("def complete")
+        [(87, "  async def complete(request: LLMRequest):")]
+    """
+    MAX_PATTERN_LENGTH = 500
+    if len(pattern) > MAX_PATTERN_LENGTH:
+        raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+    try:
+        compiled = re.compile(pattern, re.IGNORECASE)
+    except re.error as e:
+        raise ValueError(f"Invalid regex pattern: {e}")
+
+    lines = context.split('\\n')
+    return [(i + 1, line) for i, line in enumerate(lines) if compiled.search(line)]
+
+def count_lines(pattern: str = None) -> int:
+    """
+    Count lines in context, optionally filtering by pattern.
+
+    Use this to get accurate line counts instead of estimating.
+
+    Args:
+        pattern: Optional regex pattern to filter lines
+
+    Returns:
+        Total line count, or count of matching lines if pattern given
+
+    Raises:
+        ValueError: If pattern is too long or invalid
+
+    Example:
+        >>> count_lines()  # Total lines
+        113
+        >>> count_lines("import")  # Lines containing 'import'
+        5
+    """
+    lines = context.split('\\n')
+    if pattern is None:
+        return len(lines)
+
+    MAX_PATTERN_LENGTH = 500
+    if len(pattern) > MAX_PATTERN_LENGTH:
+        raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+    try:
+        compiled = re.compile(pattern, re.IGNORECASE)
+    except re.error as e:
+        raise ValueError(f"Invalid regex pattern: {e}")
+
+    return len([line for line in lines if compiled.search(line)])
+
+def get_line(n: int) -> str:
+    """
+    Get the content of a specific line (1-indexed).
+
+    Use this to verify what a specific line contains.
+
+    Args:
+        n: Line number (1-indexed, like editors show)
+
+    Returns:
+        Line content, or empty string if line doesn't exist
+
+    Example:
+        >>> get_line(90)
+        "      max_tokens: request.maxTokens ?? 8192,"
+    """
+    lines = context.split('\\n')
+    if n < 1 or n > len(lines):
+        return ""
+    return lines[n - 1]
+
+def quote_match(pattern: str, max_length: int = 100) -> str:
+    """
+    Return the first match of a pattern in context.
+
+    Use this to quote actual text as evidence for claims.
+
+    Args:
+        pattern: Regex pattern to search for
+        max_length: Maximum length of returned match (default: 100)
+
+    Returns:
+        The matched text, or None if no match found
+
+    Raises:
+        ValueError: If pattern is too long or invalid
+
+    Example:
+        >>> quote_match("max_tokens.*?[,;]")
+        "max_tokens: request.maxTokens ?? 8192,"
+    """
+    MAX_PATTERN_LENGTH = 500
+    if len(pattern) > MAX_PATTERN_LENGTH:
+        raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+    try:
+        compiled = re.compile(pattern, re.IGNORECASE)
+    except re.error as e:
+        raise ValueError(f"Invalid regex pattern: {e}")
+
+    match = compiled.search(context)
+    if match:
+        result = match.group()
+        if len(result) > max_length:
+            return result[:max_length] + "..."
+        return result
+    return None
+
 print(f"RLM sandbox ready. Context: {len(context):,} chars")
 `;
 
@@ -436,6 +562,132 @@ def extract_sections(header_pattern: str) -> list:
         })
 
     return sections
+
+def find_line(pattern: str) -> list:
+    """
+    Find lines in context matching a regex pattern.
+
+    Use this to verify line numbers before citing them in your analysis.
+    Returns 1-indexed line numbers to match how humans reference code.
+
+    Args:
+        pattern: Regex pattern to search for
+
+    Returns:
+        List of tuples: [(line_number, line_content), ...]
+
+    Raises:
+        ValueError: If pattern is too long or invalid
+
+    Example:
+        >>> find_line("def complete")
+        [(87, "  async def complete(request: LLMRequest):")]
+    """
+    MAX_PATTERN_LENGTH = 500
+    if len(pattern) > MAX_PATTERN_LENGTH:
+        raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+    try:
+        compiled = re.compile(pattern, re.IGNORECASE)
+    except re.error as e:
+        raise ValueError(f"Invalid regex pattern: {e}")
+
+    lines = context.split('\\n')
+    return [(i + 1, line) for i, line in enumerate(lines) if compiled.search(line)]
+
+def count_lines(pattern: str = None) -> int:
+    """
+    Count lines in context, optionally filtering by pattern.
+
+    Use this to get accurate line counts instead of estimating.
+
+    Args:
+        pattern: Optional regex pattern to filter lines
+
+    Returns:
+        Total line count, or count of matching lines if pattern given
+
+    Raises:
+        ValueError: If pattern is too long or invalid
+
+    Example:
+        >>> count_lines()  # Total lines
+        113
+        >>> count_lines("import")  # Lines containing 'import'
+        5
+    """
+    lines = context.split('\\n')
+    if pattern is None:
+        return len(lines)
+
+    MAX_PATTERN_LENGTH = 500
+    if len(pattern) > MAX_PATTERN_LENGTH:
+        raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+    try:
+        compiled = re.compile(pattern, re.IGNORECASE)
+    except re.error as e:
+        raise ValueError(f"Invalid regex pattern: {e}")
+
+    return len([line for line in lines if compiled.search(line)])
+
+def get_line(n: int) -> str:
+    """
+    Get the content of a specific line (1-indexed).
+
+    Use this to verify what a specific line contains.
+
+    Args:
+        n: Line number (1-indexed, like editors show)
+
+    Returns:
+        Line content, or empty string if line doesn't exist
+
+    Example:
+        >>> get_line(90)
+        "      max_tokens: request.maxTokens ?? 8192,"
+    """
+    lines = context.split('\\n')
+    if n < 1 or n > len(lines):
+        return ""
+    return lines[n - 1]
+
+def quote_match(pattern: str, max_length: int = 100) -> str:
+    """
+    Return the first match of a pattern in context.
+
+    Use this to quote actual text as evidence for claims.
+
+    Args:
+        pattern: Regex pattern to search for
+        max_length: Maximum length of returned match (default: 100)
+
+    Returns:
+        The matched text, or None if no match found
+
+    Raises:
+        ValueError: If pattern is too long or invalid
+
+    Example:
+        >>> quote_match("max_tokens.*?[,;]")
+        "max_tokens: request.maxTokens ?? 8192,"
+    """
+    MAX_PATTERN_LENGTH = 500
+    if len(pattern) > MAX_PATTERN_LENGTH:
+        raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+    try:
+        compiled = re.compile(pattern, re.IGNORECASE)
+    except re.error as e:
+        raise ValueError(f"Invalid regex pattern: {e}")
+
+    match = compiled.search(context)
+    if match:
+        result = match.group()
+        if len(result) > max_length:
+            return result[:max_length] + "..."
+        return result
+    return None
 
 print(f"RLM sandbox ready. Context: {len(context):,} chars")
 `;

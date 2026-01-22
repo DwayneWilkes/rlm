@@ -20,8 +20,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "vitest",
-    "test:run": "vitest run --reporter=basic",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:ci": "vitest run --reporter=json --outputFile=test-results.json",
     "typecheck": "tsc --noEmit"
   },
