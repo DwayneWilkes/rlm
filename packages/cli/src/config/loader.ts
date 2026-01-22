@@ -177,6 +177,80 @@ export function mergeConfig(
 }
 
 /**
+ * Resolve a profile from the configuration, handling extends chains.
+ *
+ * @param config - Full configuration with profiles
+ * @param profileName - Name of profile to resolve (uses default if not specified)
+ * @returns Resolved configuration with profile settings applied
+ * @throws Error if profile not found or circular extends detected
+ */
+export function resolveProfile(config: Config, profileName?: string): Config {
+  // If no profiles defined, return the flat config
+  if (!config.profiles) {
+    return config;
+  }
+
+  // Determine which profile to use
+  const targetProfile = profileName ?? config.default;
+
+  // If no profile specified and no default, return flat config
+  if (!targetProfile) {
+    return config;
+  }
+
+  // Check profile exists
+  if (!config.profiles[targetProfile]) {
+    const available = Object.keys(config.profiles).join(', ');
+    throw new Error(
+      `Profile '${targetProfile}' not found. Available profiles: ${available}`
+    );
+  }
+
+  // Resolve the extends chain
+  const resolved = resolveExtendsChain(config.profiles, targetProfile, new Set());
+
+  // Merge resolved profile into base config
+  return deepMerge(
+    deepMerge({} as Config, config),
+    resolved as Partial<Config>
+  );
+}
+
+/**
+ * Resolve a profile's extends chain, detecting circular references.
+ */
+function resolveExtendsChain(
+  profiles: NonNullable<Config['profiles']>,
+  profileName: string,
+  visited: Set<string>
+): Partial<Config> {
+  // Check for circular extends
+  if (visited.has(profileName)) {
+    const cycle = [...visited, profileName].join(' -> ');
+    throw new Error(`Circular extends detected: ${cycle}`);
+  }
+
+  const profile = profiles[profileName];
+  if (!profile) {
+    throw new Error(`Extended profile '${profileName}' not found`);
+  }
+
+  visited.add(profileName);
+
+  // If this profile extends another, resolve that first
+  if (profile.extends) {
+    const base = resolveExtendsChain(profiles, profile.extends, visited);
+    // Remove the extends field before merging
+    const { extends: _, ...profileWithoutExtends } = profile;
+    return deepMerge(base as Config, profileWithoutExtends as Partial<Config>);
+  }
+
+  // No extends, return profile as-is (without extends field)
+  const { extends: _, ...profileWithoutExtends } = profile;
+  return profileWithoutExtends;
+}
+
+/**
  * Re-export types and utilities for convenience.
  */
-export { ConfigSchema, type Config } from './schema.js';
+export { ConfigSchema, type Config, type Profile } from './schema.js';

@@ -145,4 +145,96 @@ describe('ConfigSchema', () => {
       expect(format).toBeDefined();
     });
   });
+
+  describe('subcallProvider', () => {
+    it('accepts optional subcallProvider for mixed provider setups', () => {
+      const config = {
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5',
+        subcallProvider: 'ollama',
+        subcallModel: 'qwen2.5-coder:14b',
+      };
+
+      const result = ConfigSchema.parse(config);
+      expect(result.subcallProvider).toBe('ollama');
+      expect(result.subcallModel).toBe('qwen2.5-coder:14b');
+    });
+
+    it('defaults subcallProvider to undefined (uses main provider)', () => {
+      const result = ConfigSchema.parse({});
+      expect(result.subcallProvider).toBeUndefined();
+    });
+  });
+
+  describe('profiles', () => {
+    it('accepts profiles object with named configurations', () => {
+      const config = {
+        profiles: {
+          local: {
+            provider: 'ollama',
+            model: 'qwen2.5-coder:14b',
+          },
+          cloud: {
+            provider: 'anthropic',
+            model: 'claude-sonnet-4-5',
+          },
+        },
+        default: 'local',
+      };
+
+      const result = ConfigSchema.parse(config);
+      expect(result.profiles).toBeDefined();
+      expect(result.profiles?.local?.provider).toBe('ollama');
+      expect(result.profiles?.cloud?.provider).toBe('anthropic');
+      expect(result.default).toBe('local');
+    });
+
+    it('supports extends for profile inheritance', () => {
+      const config = {
+        profiles: {
+          base: {
+            provider: 'anthropic',
+            model: 'claude-sonnet-4-5',
+            budget: { maxCost: 10.0, maxIterations: 50 },
+          },
+          research: {
+            extends: 'base',
+            model: 'claude-opus-4-5',
+            budget: { maxCost: 50.0 },
+          },
+        },
+      };
+
+      const result = ConfigSchema.parse(config);
+      expect(result.profiles?.research?.extends).toBe('base');
+    });
+
+    it('maintains backward compatibility with flat config', () => {
+      const flatConfig = {
+        provider: 'ollama',
+        model: 'llama3.2',
+        budget: { maxCost: 5.0 },
+      };
+
+      const result = ConfigSchema.parse(flatConfig);
+      expect(result.provider).toBe('ollama');
+      expect(result.profiles).toBeUndefined();
+    });
+
+    it('validates subcallProvider in profiles', () => {
+      const config = {
+        profiles: {
+          hybrid: {
+            provider: 'anthropic',
+            model: 'claude-opus-4-5',
+            subcallProvider: 'ollama',
+            subcallModel: 'qwen2.5-coder:14b',
+          },
+        },
+      };
+
+      const result = ConfigSchema.parse(config);
+      expect(result.profiles?.hybrid?.subcallProvider).toBe('ollama');
+    });
+  });
 });

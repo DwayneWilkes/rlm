@@ -70,19 +70,58 @@ export const OutputConfigSchema = z
 export type OutputConfig = z.infer<typeof OutputConfigSchema>;
 
 /**
+ * Profile configuration schema (used within profiles object).
+ * All fields are optional since profiles can extend other profiles.
+ */
+export const ProfileSchema = z.object({
+  /** Extend another profile by name */
+  extends: z.string().optional(),
+  /** LLM provider to use */
+  provider: ProviderSchema.optional(),
+  /** Model name for the provider */
+  model: z.string().optional(),
+  /** Provider for subcalls (defaults to main provider) */
+  subcallProvider: ProviderSchema.optional(),
+  /** Model for subcalls (defaults to main model) */
+  subcallModel: z.string().optional(),
+  /** Budget limits */
+  budget: BudgetConfigSchema.optional(),
+  /** REPL/sandbox settings */
+  repl: ReplConfigSchema.optional(),
+  /** Output settings */
+  output: OutputConfigSchema.optional(),
+});
+
+export type Profile = z.infer<typeof ProfileSchema>;
+
+/**
  * Complete RLM CLI configuration schema.
  *
- * @example
+ * Supports two formats:
+ * 1. Flat config (backward compatible)
+ * 2. Profiles-based config with named profiles and extends
+ *
+ * @example Flat config
  * ```yaml
  * provider: ollama
  * model: llama3.2
  * budget:
  *   maxCost: 5.0
- *   maxIterations: 30
- * repl:
- *   backend: auto
- * output:
- *   format: text
+ * ```
+ *
+ * @example Profiles config
+ * ```yaml
+ * profiles:
+ *   local:
+ *     provider: ollama
+ *     model: qwen2.5-coder:14b
+ *   cloud:
+ *     provider: anthropic
+ *     model: claude-sonnet-4-5
+ *   research:
+ *     extends: cloud
+ *     model: claude-opus-4-5
+ * default: local
  * ```
  */
 export const ConfigSchema = z
@@ -91,6 +130,8 @@ export const ConfigSchema = z
     provider: ProviderSchema.default('ollama'),
     /** Model name for the provider */
     model: z.string().default('llama3.2'),
+    /** Provider for subcalls (defaults to main provider) */
+    subcallProvider: ProviderSchema.optional(),
     /** Model for subcalls (llm_query, sub-RLMs) - defaults to main model */
     subcallModel: z.string().optional(),
     /** Budget limits */
@@ -99,6 +140,10 @@ export const ConfigSchema = z
     repl: ReplConfigSchema,
     /** Output settings */
     output: OutputConfigSchema,
+    /** Named configuration profiles */
+    profiles: z.record(z.string(), ProfileSchema).optional(),
+    /** Default profile to use when none specified */
+    default: z.string().optional(),
   })
   .default({});
 

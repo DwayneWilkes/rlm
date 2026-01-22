@@ -109,6 +109,8 @@ export interface RLMConfig {
     /** Configuration for Claude Code adapter */
     claudeCode?: ClaudeCodeConfig;
   };
+  /** Provider for recursive subcalls (defaults to same as provider) */
+  subcallProvider?: string;
   /** Model for recursive subcalls (defaults to same as model) */
   subcallModel?: string;
   /** Default budget if not specified per-execution */

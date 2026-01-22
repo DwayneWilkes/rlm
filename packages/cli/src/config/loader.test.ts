@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { loadConfig, mergeConfig, getConfigPath } from './loader.js';
+import { loadConfig, mergeConfig, getConfigPath, resolveProfile } from './loader.js';
 import type { Config } from './schema.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -248,6 +248,186 @@ model: llama3.2
 
       const result = await getConfigPath(undefined, tempDir);
       expect(result).toBe(configPath);
+    });
+  });
+
+  describe('resolveProfile', () => {
+    it('returns profile settings when profile exists', () => {
+      const config: Config = {
+        provider: 'ollama',
+        model: 'llama3.2',
+        budget: { maxCost: 5.0, maxIterations: 30, maxDepth: 2, maxTime: 300000 },
+        repl: { backend: 'auto', timeout: 30000 },
+        output: { format: 'text' },
+        profiles: {
+          local: {
+            provider: 'ollama',
+            model: 'qwen2.5-coder:14b',
+          },
+          cloud: {
+            provider: 'anthropic',
+            model: 'claude-sonnet-4-5',
+          },
+        },
+        default: 'local',
+      };
+
+      const result = resolveProfile(config, 'cloud');
+
+      expect(result.provider).toBe('anthropic');
+      expect(result.model).toBe('claude-sonnet-4-5');
+    });
+
+    it('resolves extends chain', () => {
+      const config: Config = {
+        provider: 'ollama',
+        model: 'llama3.2',
+        budget: { maxCost: 5.0, maxIterations: 30, maxDepth: 2, maxTime: 300000 },
+        repl: { backend: 'auto', timeout: 30000 },
+        output: { format: 'text' },
+        profiles: {
+          base: {
+            provider: 'anthropic',
+            model: 'claude-sonnet-4-5',
+            budget: { maxCost: 10.0, maxIterations: 50, maxDepth: 3, maxTime: 600000 },
+          },
+          research: {
+            extends: 'base',
+            model: 'claude-opus-4-5',
+            budget: { maxCost: 50.0, maxIterations: 100, maxDepth: 5, maxTime: 900000 },
+          },
+        },
+      };
+
+      const result = resolveProfile(config, 'research');
+
+      expect(result.provider).toBe('anthropic'); // From base
+      expect(result.model).toBe('claude-opus-4-5'); // Overridden
+      expect(result.budget.maxCost).toBe(50.0); // Overridden
+      expect(result.budget.maxIterations).toBe(100); // Overridden
+    });
+
+    it('resolves chained extends (A extends B extends C)', () => {
+      const config: Config = {
+        provider: 'ollama',
+        model: 'llama3.2',
+        budget: { maxCost: 5.0, maxIterations: 30, maxDepth: 2, maxTime: 300000 },
+        repl: { backend: 'auto', timeout: 30000 },
+        output: { format: 'text' },
+        profiles: {
+          base: {
+            provider: 'anthropic',
+            budget: { maxCost: 10.0, maxIterations: 30, maxDepth: 2, maxTime: 300000 },
+          },
+          mid: {
+            extends: 'base',
+            model: 'claude-sonnet-4-5',
+          },
+          top: {
+            extends: 'mid',
+            budget: { maxCost: 100.0, maxIterations: 200, maxDepth: 10, maxTime: 1800000 },
+          },
+        },
+      };
+
+      const result = resolveProfile(config, 'top');
+
+      expect(result.provider).toBe('anthropic'); // From base
+      expect(result.model).toBe('claude-sonnet-4-5'); // From mid
+      expect(result.budget.maxCost).toBe(100.0); // From top
+    });
+
+    it('uses default profile when no profile specified', () => {
+      const config: Config = {
+        provider: 'ollama',
+        model: 'llama3.2',
+        budget: { maxCost: 5.0, maxIterations: 30, maxDepth: 2, maxTime: 300000 },
+        repl: { backend: 'auto', timeout: 30000 },
+        output: { format: 'text' },
+        profiles: {
+          local: {
+            provider: 'ollama',
+            model: 'qwen2.5-coder:14b',
+          },
+        },
+        default: 'local',
+      };
+
+      const result = resolveProfile(config);
+
+      expect(result.provider).toBe('ollama');
+      expect(result.model).toBe('qwen2.5-coder:14b');
+    });
+
+    it('uses flat config when no profiles defined', () => {
+      const config: Config = {
+        provider: 'anthropic',
+        model: 'claude-opus-4-5',
+        budget: { maxCost: 5.0, maxIterations: 30, maxDepth: 2, maxTime: 300000 },
+        repl: { backend: 'auto', timeout: 30000 },
+        output: { format: 'text' },
+      };
+
+      const result = resolveProfile(config);
+
+      expect(result.provider).toBe('anthropic');
+      expect(result.model).toBe('claude-opus-4-5');
+    });
+
+    it('throws on missing profile', () => {
+      const config: Config = {
+        provider: 'ollama',
+        model: 'llama3.2',
+        budget: { maxCost: 5.0, maxIterations: 30, maxDepth: 2, maxTime: 300000 },
+        repl: { backend: 'auto', timeout: 30000 },
+        output: { format: 'text' },
+        profiles: {
+          local: { provider: 'ollama' },
+        },
+      };
+
+      expect(() => resolveProfile(config, 'nonexistent')).toThrow(
+        /Profile 'nonexistent' not found/
+      );
+    });
+
+    it('throws on circular extends', () => {
+      const config: Config = {
+        provider: 'ollama',
+        model: 'llama3.2',
+        budget: { maxCost: 5.0, maxIterations: 30, maxDepth: 2, maxTime: 300000 },
+        repl: { backend: 'auto', timeout: 30000 },
+        output: { format: 'text' },
+        profiles: {
+          a: { extends: 'b', provider: 'ollama' },
+          b: { extends: 'a', provider: 'anthropic' },
+        },
+      };
+
+      expect(() => resolveProfile(config, 'a')).toThrow(/Circular extends/);
+    });
+
+    it('preserves subcallProvider in resolved profile', () => {
+      const config: Config = {
+        provider: 'ollama',
+        model: 'llama3.2',
+        budget: { maxCost: 5.0, maxIterations: 30, maxDepth: 2, maxTime: 300000 },
+        repl: { backend: 'auto', timeout: 30000 },
+        output: { format: 'text' },
+        profiles: {
+          hybrid: {
+            provider: 'anthropic',
+            model: 'claude-opus-4-5',
+            subcallProvider: 'ollama',
+            subcallModel: 'qwen2.5-coder:14b',
+          },
+        },
+      };
+
+      const result = resolveProfile(config, 'hybrid');
+
+      expect(result.subcallProvider).toBe('ollama');
+      expect(result.subcallModel).toBe('qwen2.5-coder:14b');
     });
   });
 });

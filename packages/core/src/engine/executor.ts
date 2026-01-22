@@ -116,7 +116,8 @@ export class Executor {
     const replConfig = { ...DEFAULT_REPL_CONFIG, ...this.config.repl };
     const bridges = {
       onLLMQuery: async (prompt: string) => {
-        const response = await this.router.complete(this.config.provider, {
+        const subcallProvider = this.config.subcallProvider ?? this.config.provider;
+        const response = await this.router.complete(subcallProvider, {
           model: this.config.subcallModel ?? this.config.model,
           systemPrompt: 'You are a helpful assistant. Be concise.',
           userPrompt: prompt,
@@ -387,7 +388,8 @@ Begin by examining the context, then work toward answering the task.`;
    */
   private async directAnswer(task: string, context: string): Promise<string> {
     const preview = context.slice(0, 10000);
-    const response = await this.router.complete(this.config.provider, {
+    const subcallProvider = this.config.subcallProvider ?? this.config.provider;
+    const response = await this.router.complete(subcallProvider, {
       model: this.config.subcallModel ?? this.config.model,
       systemPrompt: 'Answer concisely based on the context provided.',
       userPrompt: `Context:\n${preview}\n\nTask: ${task}`,

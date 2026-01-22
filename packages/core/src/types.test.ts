@@ -71,6 +71,18 @@ describe('types', () => {
         expect(config.subcallModel).toBe('claude-haiku-3-20240307');
       });
 
+      it('should accept optional subcallProvider for mixed provider setups', () => {
+        const config: RLMConfig = {
+          provider: 'anthropic',
+          model: 'claude-sonnet-4-20250514',
+          subcallProvider: 'ollama',
+          subcallModel: 'qwen2.5-coder:14b',
+        };
+
+        expect(config.subcallProvider).toBe('ollama');
+        expect(config.subcallModel).toBe('qwen2.5-coder:14b');
+      });
+
       it('should accept optional defaultBudget as Partial<Budget>', () => {
         const config: RLMConfig = {
           provider: 'ollama',
