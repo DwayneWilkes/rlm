@@ -278,6 +278,13 @@ class RlmSandbox:
         # Add utility functions
         self._globals["chunk_text"] = self._make_chunk_text()
         self._globals["search_context"] = self._make_search_context()
+        self._globals["count_matches"] = self._make_count_matches()
+        self._globals["extract_json"] = self._make_extract_json()
+        self._globals["extract_sections"] = self._make_extract_sections()
+        self._globals["find_line"] = self._make_find_line()
+        self._globals["count_lines"] = self._make_count_lines()
+        self._globals["get_line"] = self._make_get_line()
+        self._globals["quote_match"] = self._make_quote_match()
 
     def _make_chunk_text(self):
         """Create the chunk_text utility function."""
@@ -352,6 +359,272 @@ class RlmSandbox:
 
             return results
         return search_context
+
+    def _make_count_matches(self):
+        """Create the count_matches utility function."""
+        import re
+
+        def count_matches(pattern: str) -> int:
+            """
+            Count regex matches in context without building full results list.
+
+            More memory-efficient than search_context when you only need the count.
+
+            Args:
+                pattern: Regex pattern to search for
+
+            Returns:
+                Number of matches found
+
+            Raises:
+                ValueError: If pattern is too long or invalid
+            """
+            MAX_PATTERN_LENGTH = 500
+            if len(pattern) > MAX_PATTERN_LENGTH:
+                raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+            try:
+                compiled = re.compile(pattern, re.IGNORECASE)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern: {e}")
+
+            context = self._globals.get("context", "")
+            return len(compiled.findall(context))
+        return count_matches
+
+    def _make_extract_json(self):
+        """Create the extract_json utility function."""
+        import re
+        import json as json_module
+
+        def extract_json(text: str):
+            """
+            Safely extract JSON object or array from text.
+
+            Finds the first valid JSON structure in the text and parses it.
+
+            Args:
+                text: Text that may contain JSON
+
+            Returns:
+                Parsed JSON as dict or list, or None if no valid JSON found
+            """
+            # Try to find JSON object
+            obj_match = re.search(r'\{[\s\S]*\}', text)
+            arr_match = re.search(r'\[[\s\S]*\]', text)
+
+            candidates = []
+            if obj_match:
+                candidates.append(obj_match.group())
+            if arr_match:
+                candidates.append(arr_match.group())
+
+            # Try each candidate, longest first (more likely to be complete)
+            candidates.sort(key=len, reverse=True)
+
+            for candidate in candidates:
+                try:
+                    return json_module.loads(candidate)
+                except json_module.JSONDecodeError:
+                    continue
+
+            return None
+        return extract_json
+
+    def _make_extract_sections(self):
+        """Create the extract_sections utility function."""
+        import re
+
+        def extract_sections(header_pattern: str) -> list:
+            """
+            Extract sections from context based on header pattern.
+
+            Splits the context into sections where each section starts with
+            a line matching the header pattern.
+
+            Args:
+                header_pattern: Regex pattern for section headers (use MULTILINE anchors)
+
+            Returns:
+                List of dicts with 'header', 'content', and 'start' keys
+            """
+            MAX_PATTERN_LENGTH = 500
+            if len(header_pattern) > MAX_PATTERN_LENGTH:
+                raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+            try:
+                compiled = re.compile(header_pattern, re.MULTILINE)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern: {e}")
+
+            context = self._globals.get("context", "")
+            matches = list(compiled.finditer(context))
+            sections = []
+
+            for i, match in enumerate(matches):
+                header = match.group()
+                start = match.start()
+                # Content ends at next header or end of context
+                end = matches[i + 1].start() if i + 1 < len(matches) else len(context)
+                content = context[match.end():end].strip()
+
+                sections.append({
+                    'header': header,
+                    'content': content,
+                    'start': start
+                })
+
+            return sections
+        return extract_sections
+
+    def _make_find_line(self):
+        """Create the find_line utility function."""
+        import re
+
+        def find_line(pattern: str) -> list:
+            """
+            Find lines in context matching a regex pattern.
+
+            Use this to verify line numbers before citing them in your analysis.
+            Returns 1-indexed line numbers to match how humans reference code.
+
+            Args:
+                pattern: Regex pattern to search for
+
+            Returns:
+                List of tuples: [(line_number, line_content), ...]
+
+            Raises:
+                ValueError: If pattern is too long or invalid
+
+            Example:
+                >>> find_line("def complete")
+                [(87, "  async def complete(request: LLMRequest):")]
+            """
+            MAX_PATTERN_LENGTH = 500
+            if len(pattern) > MAX_PATTERN_LENGTH:
+                raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+            try:
+                compiled = re.compile(pattern, re.IGNORECASE)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern: {e}")
+
+            context = self._globals.get("context", "")
+            lines = context.split('\n')
+            return [(i + 1, line) for i, line in enumerate(lines) if compiled.search(line)]
+        return find_line
+
+    def _make_count_lines(self):
+        """Create the count_lines utility function."""
+        import re
+
+        def count_lines(pattern: str = None) -> int:
+            """
+            Count lines in context, optionally filtering by pattern.
+
+            Use this to get accurate line counts instead of estimating.
+
+            Args:
+                pattern: Optional regex pattern to filter lines
+
+            Returns:
+                Total line count, or count of matching lines if pattern given
+
+            Raises:
+                ValueError: If pattern is too long or invalid
+
+            Example:
+                >>> count_lines()  # Total lines
+                113
+                >>> count_lines("import")  # Lines containing 'import'
+                5
+            """
+            context = self._globals.get("context", "")
+            lines = context.split('\n')
+            if pattern is None:
+                return len(lines)
+
+            MAX_PATTERN_LENGTH = 500
+            if len(pattern) > MAX_PATTERN_LENGTH:
+                raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+            try:
+                compiled = re.compile(pattern, re.IGNORECASE)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern: {e}")
+
+            return len([line for line in lines if compiled.search(line)])
+        return count_lines
+
+    def _make_get_line(self):
+        """Create the get_line utility function."""
+
+        def get_line(n: int) -> str:
+            """
+            Get the content of a specific line (1-indexed).
+
+            Use this to verify what a specific line contains.
+
+            Args:
+                n: Line number (1-indexed, like editors show)
+
+            Returns:
+                Line content, or empty string if line doesn't exist
+
+            Example:
+                >>> get_line(90)
+                "      max_tokens: request.maxTokens ?? 8192,"
+            """
+            context = self._globals.get("context", "")
+            lines = context.split('\n')
+            if n < 1 or n > len(lines):
+                return ""
+            return lines[n - 1]
+        return get_line
+
+    def _make_quote_match(self):
+        """Create the quote_match utility function."""
+        import re
+
+        def quote_match(pattern: str, max_length: int = 100) -> str:
+            """
+            Return the first match of a pattern in context.
+
+            Use this to quote actual text as evidence for claims.
+
+            Args:
+                pattern: Regex pattern to search for
+                max_length: Maximum length of returned match (default: 100)
+
+            Returns:
+                The matched text, or None if no match found
+
+            Raises:
+                ValueError: If pattern is too long or invalid
+
+            Example:
+                >>> quote_match("max_tokens.*?[,;]")
+                "max_tokens: request.maxTokens ?? 8192,"
+            """
+            MAX_PATTERN_LENGTH = 500
+            if len(pattern) > MAX_PATTERN_LENGTH:
+                raise ValueError(f"Pattern too long (max {MAX_PATTERN_LENGTH} chars)")
+
+            try:
+                compiled = re.compile(pattern, re.IGNORECASE)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern: {e}")
+
+            context = self._globals.get("context", "")
+            match = compiled.search(context)
+            if match:
+                result = match.group()
+                if len(result) > max_length:
+                    return result[:max_length] + "..."
+                return result
+            return None
+        return quote_match
 
     def get_variable(self, name: str) -> Dict[str, Any]:
         """

@@ -209,6 +209,170 @@ describe('NativePythonSandbox', () => {
 
       await sandbox.destroy();
     });
+
+    it('should provide count_matches function', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('apple banana apple cherry apple');
+
+      const result = await sandbox.execute('count = count_matches("apple")\nprint(count)');
+
+      expect(result.stdout.trim()).toBe('3');
+
+      await sandbox.destroy();
+    });
+
+    it('should provide extract_json function', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('Some text');
+
+      const result = await sandbox.execute(`
+data = extract_json('prefix {"key": "value"} suffix')
+print(data["key"])
+`);
+
+      expect(result.stdout.trim()).toBe('value');
+
+      await sandbox.destroy();
+    });
+
+    it('should provide extract_sections function', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('# Section 1\nContent A\n# Section 2\nContent B');
+
+      const result = await sandbox.execute(`
+sections = extract_sections("^# .*")
+print(len(sections))
+print(sections[0]["header"])
+`);
+
+      expect(result.stdout).toContain('2');
+      expect(result.stdout).toContain('# Section 1');
+
+      await sandbox.destroy();
+    });
+
+    it('should provide find_line function', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('line one\nline two\nline three');
+
+      const result = await sandbox.execute(`
+matches = find_line("two")
+print(matches[0][0])  # Line number
+print(matches[0][1])  # Line content
+`);
+
+      expect(result.stdout).toContain('2');
+      expect(result.stdout).toContain('line two');
+
+      await sandbox.destroy();
+    });
+
+    it('should provide count_lines function', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('import os\nimport sys\ndef main():\n    pass');
+
+      const result = await sandbox.execute(`
+total = count_lines()
+imports = count_lines("import")
+print(f"{total},{imports}")
+`);
+
+      expect(result.stdout.trim()).toBe('4,2');
+
+      await sandbox.destroy();
+    });
+
+    it('should provide get_line function', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('first\nsecond\nthird');
+
+      const result = await sandbox.execute(`
+line2 = get_line(2)
+print(line2)
+`);
+
+      expect(result.stdout.trim()).toBe('second');
+
+      await sandbox.destroy();
+    });
+
+    it('should return empty string for invalid line numbers in get_line', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('only one line');
+
+      const result = await sandbox.execute(`
+line0 = get_line(0)
+line999 = get_line(999)
+print(f"[{line0}][{line999}]")
+`);
+
+      expect(result.stdout.trim()).toBe('[][]');
+
+      await sandbox.destroy();
+    });
+
+    it('should provide quote_match function', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('The max_tokens value is 8192 here');
+
+      const result = await sandbox.execute(`
+match = quote_match("max_tokens.*?\\\\d+")
+print(match)
+`);
+
+      expect(result.stdout).toContain('max_tokens value is 8192');
+
+      await sandbox.destroy();
+    });
+
+    it('should return None for no match in quote_match', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('no numbers here');
+
+      const result = await sandbox.execute(`
+match = quote_match("\\\\d+")
+print(match)
+`);
+
+      expect(result.stdout.trim()).toBe('None');
+
+      await sandbox.destroy();
+    });
+
+    it('should truncate long matches in quote_match', async () => {
+      const { NativePythonSandbox } = await import('./native-python.js');
+      const bridges = createMockBridges();
+      const sandbox = new NativePythonSandbox({ timeout: 30000, maxOutputLength: 50000 }, bridges);
+      await sandbox.initialize('a'.repeat(200));
+
+      const result = await sandbox.execute(`
+match = quote_match("a+", max_length=10)
+print(match)
+`);
+
+      expect(result.stdout).toContain('...');
+      expect(result.stdout.trim().length).toBeLessThan(20);
+
+      await sandbox.destroy();
+    });
   });
 
   describe('cleanup', () => {

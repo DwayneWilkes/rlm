@@ -81,19 +81,24 @@ Based on RLM paper technique: "Check the content of the 'context' variable to av
 
 After implementation, verify:
 
-- [x] All 430 core tests pass
-- [ ] Re-run the anthropic.ts analysis task (manual verification)
-- [ ] RLM uses new helpers (find_line, count_lines) in output
-- [ ] Line numbers cited match actual file lines
-- [ ] Values (like max_tokens) match actual code
-- [ ] Method names match actual names in file
+- [x] All 448 core tests pass (increased from 430)
+- [x] Re-run the anthropic.ts analysis task (manual verification)
+- [x] RLM uses new helpers (find_line, count_lines) in output
+- [x] Line numbers cited match actual file lines
+- [x] Values (like max_tokens) match actual code
+- [x] Method names match actual names in file
+
+**Note:** Initial implementation only added helpers to Pyodide sandboxes (python-setup.ts).
+A critical bug was found where the native Python sandbox (rlm_sandbox.py) was missing these helpers.
+Fixed by adding all helpers to rlm_sandbox.py as well.
 
 ## Files Changed
 
 | File | Changes |
 |------|---------|
 | `packages/core/src/repl/python-setup.ts` | Added find_line, count_lines, get_line, quote_match |
-| `packages/core/src/repl/sandbox.test.ts` | Added tests for new helpers |
+| `packages/core/python/rlm_sandbox.py` | Added find_line, count_lines, get_line, quote_match, count_matches, extract_json, extract_sections |
+| `packages/core/src/repl/native-python.test.ts` | Added tests for all new helpers |
 | `packages/core/src/engine/executor.ts` | Added ACCURACY section, documented helpers, added verification example |
 
 ## Estimated Complexity
