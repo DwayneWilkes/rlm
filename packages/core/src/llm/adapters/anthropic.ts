@@ -53,6 +53,55 @@ export const ANTHROPIC_PRICING: Record<string, ModelPricing> = {
 const DEFAULT_PRICING: ModelPricing = { input: 0.003, output: 0.015 };
 
 /**
+ * Model capabilities for output token limits.
+ * Used to prevent exceeding model-specific limits.
+ */
+export const MODEL_CAPABILITIES: Record<string, { maxOutput: number }> = {
+  // Claude 4.5
+  'claude-opus-4-5-20251101': { maxOutput: 64000 },
+  'claude-sonnet-4-5-20250929': { maxOutput: 64000 },
+  'claude-haiku-4-5-20251001': { maxOutput: 64000 },
+  // Claude 4.x
+  'claude-opus-4-1-20250805': { maxOutput: 32000 },
+  'claude-sonnet-4-20250514': { maxOutput: 64000 },
+  'claude-opus-4-20250514': { maxOutput: 32000 },
+  // Claude 3.x
+  'claude-3-7-sonnet-20250219': { maxOutput: 64000 },
+  'claude-3-haiku-20240307': { maxOutput: 4096 },
+};
+
+/** Default max output tokens for unknown models */
+const DEFAULT_MAX_OUTPUT = 8192;
+
+/**
+ * Get effective max_tokens value, respecting model limits.
+ *
+ * @param model - Model identifier
+ * @param requested - Requested max_tokens (optional)
+ * @returns Effective max_tokens clamped to model limit
+ */
+export function getEffectiveMaxTokens(model: string, requested?: number): number {
+  const modelMax = MODEL_CAPABILITIES[model]?.maxOutput ?? DEFAULT_MAX_OUTPUT;
+  const desired = requested ?? DEFAULT_MAX_OUTPUT;
+  return Math.min(desired, modelMax);
+}
+
+/**
+ * Error thrown when the Anthropic API call fails.
+ * Includes model context for easier debugging.
+ */
+export class AnthropicAPIError extends Error {
+  constructor(
+    message: string,
+    public readonly model: string,
+    public readonly cause: Error
+  ) {
+    super(`Anthropic API error (model=${model}): ${message}`);
+    this.name = 'AnthropicAPIError';
+  }
+}
+
+/**
  * Adapter for Anthropic Claude models.
  *
  * @example
@@ -83,14 +132,26 @@ export class AnthropicAdapter implements LLMAdapter {
    *
    * @param request - The LLM request to complete
    * @returns The LLM response with content, token counts, and calculated cost
+   * @throws {AnthropicAPIError} When the API call fails
    */
   async complete(request: LLMRequest): Promise<LLMResponse> {
-    const response = await this.client.messages.create({
-      model: request.model,
-      max_tokens: request.maxTokens ?? 8192,
-      system: request.systemPrompt,
-      messages: [{ role: 'user', content: request.userPrompt }],
-    });
+    const maxTokens = getEffectiveMaxTokens(request.model, request.maxTokens);
+
+    let response;
+    try {
+      response = await this.client.messages.create({
+        model: request.model,
+        max_tokens: maxTokens,
+        system: request.systemPrompt,
+        messages: [{ role: 'user', content: request.userPrompt }],
+      });
+    } catch (error) {
+      throw new AnthropicAPIError(
+        error instanceof Error ? error.message : String(error),
+        request.model,
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
 
     // Extract text content from response
     const content =

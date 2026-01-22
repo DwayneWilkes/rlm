@@ -219,4 +219,154 @@ describe('AnthropicAdapter', () => {
       });
     });
   });
+
+  describe('model-aware max_tokens', () => {
+    it('should clamp max_tokens to Haiku 3 limit (4096) when no maxTokens specified', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: 'Response' }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
+
+      const adapter = new AnthropicAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'claude-3-haiku-20240307',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          max_tokens: 4096, // Clamped to Haiku 3's limit
+        })
+      );
+    });
+
+    it('should use default 8192 for unknown models', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: 'Response' }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
+
+      const adapter = new AnthropicAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'claude-unknown-future-model',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          max_tokens: 8192,
+        })
+      );
+    });
+
+    it('should respect explicit maxTokens in request', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: 'Response' }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
+
+      const adapter = new AnthropicAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'claude-sonnet-4-20250514',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        maxTokens: 1024,
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          max_tokens: 1024,
+        })
+      );
+    });
+
+    it('should clamp explicit maxTokens to model limit', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: 'Response' }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
+
+      const adapter = new AnthropicAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'claude-3-haiku-20240307',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        maxTokens: 10000, // Exceeds Haiku 3's 4096 limit
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          max_tokens: 4096, // Clamped to model limit
+        })
+      );
+    });
+  });
+
+  describe('error wrapping', () => {
+    it('should wrap API errors with model context', async () => {
+      const apiError = new Error('Rate limit exceeded');
+      mockCreate.mockRejectedValue(apiError);
+
+      const adapter = new AnthropicAdapter({ apiKey: 'test-key' });
+
+      await expect(
+        adapter.complete({
+          model: 'claude-sonnet-4-20250514',
+          systemPrompt: 'sys',
+          userPrompt: 'user',
+        })
+      ).rejects.toThrow('claude-sonnet-4-20250514');
+    });
+
+    it('should preserve original error as cause', async () => {
+      const apiError = new Error('Connection failed');
+      mockCreate.mockRejectedValue(apiError);
+
+      const adapter = new AnthropicAdapter({ apiKey: 'test-key' });
+
+      try {
+        await adapter.complete({
+          model: 'claude-sonnet-4-20250514',
+          systemPrompt: 'sys',
+          userPrompt: 'user',
+        });
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect(error).toHaveProperty('cause', apiError);
+      }
+    });
+
+    it('should have error name AnthropicAPIError', async () => {
+      mockCreate.mockRejectedValue(new Error('API error'));
+
+      const adapter = new AnthropicAdapter({ apiKey: 'test-key' });
+
+      try {
+        await adapter.complete({
+          model: 'claude-sonnet-4-20250514',
+          systemPrompt: 'sys',
+          userPrompt: 'user',
+        });
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect((error as Error).name).toBe('AnthropicAPIError');
+      }
+    });
+
+    it('should handle non-Error throws', async () => {
+      mockCreate.mockRejectedValue('string error');
+
+      const adapter = new AnthropicAdapter({ apiKey: 'test-key' });
+
+      await expect(
+        adapter.complete({
+          model: 'claude-sonnet-4-20250514',
+          systemPrompt: 'sys',
+          userPrompt: 'user',
+        })
+      ).rejects.toThrow('string error');
+    });
+  });
 });
