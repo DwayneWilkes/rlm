@@ -18,6 +18,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 /**
+ * Debug logger that writes to stderr to avoid polluting stdout (which may contain JSON output).
+ */
+function debug(...args: unknown[]): void {
+  if (process.env.RLM_DEBUG) {
+    console.error('[NativePythonSandbox]', ...args);
+  }
+}
+
+/**
  * Environment variables that are safe to pass to the Python subprocess.
  * We explicitly allowlist to prevent leaking sensitive values like API keys.
  */
@@ -160,7 +169,7 @@ export class NativePythonSandbox implements Sandbox {
     this.config = config;
     this.bridges = bridges;
     this.pythonPath = pythonPath;
-    console.debug('[NativePythonSandbox] Created with config:', {
+    debug(' Created with config:', {
       timeout: config.timeout,
       maxOutputLength: config.maxOutputLength,
       pythonPath,
@@ -171,28 +180,28 @@ export class NativePythonSandbox implements Sandbox {
    * Initialize the sandbox by spawning Python process and setting context.
    */
   async initialize(context: string): Promise<void> {
-    console.debug('[NativePythonSandbox] Initializing with context length:', context.length);
+    debug(' Initializing with context length:', context.length);
 
     if (this.destroyed) {
       throw new Error('Sandbox has been destroyed');
     }
 
     if (this.process) {
-      console.debug('[NativePythonSandbox] Reusing existing process');
+      debug(' Reusing existing process');
     } else {
       await this.spawnProcess();
     }
 
     // Send initialize command
     const result = await this.sendRequest('initialize', { context });
-    console.debug('[NativePythonSandbox] Initialize result:', result);
+    debug(' Initialize result:', result);
   }
 
   /**
    * Execute Python code in the sandbox.
    */
   async execute(code: string): Promise<CodeExecution> {
-    console.debug('[NativePythonSandbox] Execute:', code.slice(0, 100) + (code.length > 100 ? '...' : ''));
+    debug(' Execute:', code.slice(0, 100) + (code.length > 100 ? '...' : ''));
 
     if (this.destroyed || !this.process) {
       throw new Error('Sandbox not initialized or has been destroyed');
@@ -219,7 +228,7 @@ export class NativePythonSandbox implements Sandbox {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      console.debug('[NativePythonSandbox] Execute error:', errorMessage);
+      debug(' Execute error:', errorMessage);
 
       return {
         code,
@@ -235,7 +244,7 @@ export class NativePythonSandbox implements Sandbox {
    * Get a variable's value from the Python environment.
    */
   async getVariable(name: string): Promise<unknown> {
-    console.debug('[NativePythonSandbox] Getting variable:', name);
+    debug(' Getting variable:', name);
 
     if (this.destroyed || !this.process) {
       throw new Error('Sandbox not initialized or has been destroyed');
@@ -261,7 +270,7 @@ export class NativePythonSandbox implements Sandbox {
    * Cancel any currently running execution.
    */
   async cancel(): Promise<void> {
-    console.debug('[NativePythonSandbox] Cancel requested');
+    debug(' Cancel requested');
 
     if (this.process) {
       // Send interrupt signal
@@ -273,7 +282,7 @@ export class NativePythonSandbox implements Sandbox {
    * Clean up sandbox resources.
    */
   async destroy(): Promise<void> {
-    console.debug('[NativePythonSandbox] Destroying');
+    debug(' Destroying');
 
     this.destroyed = true;
 
@@ -298,7 +307,7 @@ export class NativePythonSandbox implements Sandbox {
    */
   private async spawnProcess(): Promise<void> {
     const scriptPath = findPythonScript();
-    console.debug('[NativePythonSandbox] Spawning Python process:', this.pythonPath, scriptPath);
+    debug(' Spawning Python process:', this.pythonPath, scriptPath);
 
     return new Promise((resolve, reject) => {
       try {
@@ -314,12 +323,12 @@ export class NativePythonSandbox implements Sandbox {
 
         // Handle stderr (logging/debug)
         this.process.stderr?.on('data', (data: Buffer) => {
-          console.debug('[NativePythonSandbox:stderr]', data.toString().trim());
+          debug('stderr:', data.toString().trim());
         });
 
         // Handle process exit
         this.process.on('close', (code) => {
-          console.debug('[NativePythonSandbox] Process exited with code:', code);
+          debug(' Process exited with code:', code);
           this.process = null;
         });
 
@@ -360,7 +369,7 @@ export class NativePythonSandbox implements Sandbox {
           this.handleResponse(message as JsonRpcResponse);
         }
       } catch (err) {
-        console.debug('[NativePythonSandbox] Failed to parse JSON:', line);
+        debug(' Failed to parse JSON:', line);
       }
     }
   }
@@ -371,7 +380,7 @@ export class NativePythonSandbox implements Sandbox {
   private handleResponse(response: JsonRpcResponse): void {
     const pending = this.pendingRequests.get(response.id);
     if (!pending) {
-      console.debug('[NativePythonSandbox] Received response for unknown request:', response.id);
+      debug(' Received response for unknown request:', response.id);
       return;
     }
 
@@ -391,7 +400,7 @@ export class NativePythonSandbox implements Sandbox {
    * Handle a bridge callback request from Python.
    */
   private async handleBridgeRequest(request: JsonRpcRequest): Promise<void> {
-    console.debug('[NativePythonSandbox] Bridge request:', request.method, request.params);
+    debug(' Bridge request:', request.method, request.params);
 
     let result: string | string[];
     let error: string | undefined;
@@ -444,7 +453,7 @@ export class NativePythonSandbox implements Sandbox {
       return [];
     }
 
-    console.debug('[NativePythonSandbox] Processing batch of', prompts.length, 'LLM queries in parallel');
+    debug(' Processing batch of', prompts.length, 'LLM queries in parallel');
 
     // Process all prompts in parallel
     const results = await Promise.all(
@@ -459,7 +468,7 @@ export class NativePythonSandbox implements Sandbox {
       })
     );
 
-    console.debug('[NativePythonSandbox] Batch complete, got', results.length, 'responses');
+    debug(' Batch complete, got', results.length, 'responses');
 
     return results;
   }

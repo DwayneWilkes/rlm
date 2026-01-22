@@ -24,6 +24,10 @@ interface RunOptions {
   config?: string;
   format?: OutputFormat;
   backend?: 'native' | 'pyodide' | 'daemon';
+  maxIterations?: number;
+  maxCost?: number;
+  maxDepth?: number;
+  maxTime?: number;
 }
 
 /**
@@ -62,6 +66,22 @@ export function createRunCommand(): Command {
       '-b, --backend <backend>',
       'Sandbox backend: native (Python), pyodide (WASM), or daemon'
     )
+    .option(
+      '-i, --max-iterations <n>',
+      'Maximum number of iterations (default: 30)',
+      (v) => parseInt(v, 10)
+    )
+    .option('--max-cost <n>', 'Maximum cost in dollars (default: 5.0)', parseFloat)
+    .option(
+      '--max-depth <n>',
+      'Maximum recursion depth (default: 2)',
+      (v) => parseInt(v, 10)
+    )
+    .option(
+      '--max-time <ms>',
+      'Maximum execution time in milliseconds (default: 300000)',
+      (v) => parseInt(v, 10)
+    )
     .action(async (task: string, options: RunOptions) => {
       try {
         // Load config from file
@@ -75,6 +95,12 @@ export function createRunCommand(): Command {
           repl: {
             ...fileConfig.repl,
             backend: options.backend ?? fileConfig.repl.backend,
+          },
+          budget: {
+            maxCost: options.maxCost ?? fileConfig.budget.maxCost,
+            maxIterations: options.maxIterations ?? fileConfig.budget.maxIterations,
+            maxDepth: options.maxDepth ?? fileConfig.budget.maxDepth,
+            maxTime: options.maxTime ?? fileConfig.budget.maxTime,
           },
         };
 

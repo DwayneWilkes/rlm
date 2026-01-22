@@ -44,3 +44,4 @@ tmp/
 # Claude Code local settings (keep .claude/settings.json for team)
 .claude/settings.local.json
 .claude/*.local.*
+analysis-runs/
