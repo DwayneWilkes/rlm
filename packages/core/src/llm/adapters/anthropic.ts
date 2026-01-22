@@ -33,13 +33,23 @@ export interface ModelPricing {
  * Pricing for Anthropic Claude models (per 1K tokens).
  *
  * Update this object when pricing changes or new models are released.
+ * Source: https://platform.claude.com/docs/en/about-claude/models/overview
  */
 export const ANTHROPIC_PRICING: Record<string, ModelPricing> = {
+  // Claude 4.5 (latest)
+  'claude-opus-4-5-20251101': { input: 0.005, output: 0.025 },
+  'claude-sonnet-4-5-20250929': { input: 0.003, output: 0.015 },
+  'claude-haiku-4-5-20251001': { input: 0.001, output: 0.005 },
+  // Claude 4.x (legacy)
+  'claude-opus-4-1-20250805': { input: 0.015, output: 0.075 },
   'claude-sonnet-4-20250514': { input: 0.003, output: 0.015 },
-  'claude-haiku-3-20240307': { input: 0.00025, output: 0.00125 },
+  'claude-opus-4-20250514': { input: 0.015, output: 0.075 },
+  // Claude 3.x (legacy)
+  'claude-3-7-sonnet-20250219': { input: 0.003, output: 0.015 },
+  'claude-3-haiku-20240307': { input: 0.00025, output: 0.00125 },
 };
 
-/** Default pricing for unknown models (uses Sonnet pricing) */
+/** Default pricing for unknown models (uses Sonnet 4.5 pricing) */
 const DEFAULT_PRICING: ModelPricing = { input: 0.003, output: 0.015 };
 
 /**

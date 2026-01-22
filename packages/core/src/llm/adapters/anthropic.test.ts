@@ -150,7 +150,7 @@ describe('AnthropicAdapter', () => {
       expect(response.cost).toBeCloseTo(0.018, 6);
     });
 
-    it('should calculate cost for claude-haiku-3-20240307 correctly', async () => {
+    it('should calculate cost for claude-3-haiku-20240307 correctly', async () => {
       // Pricing: $0.00025/1K input, $0.00125/1K output
       mockCreate.mockResolvedValue({
         content: [{ type: 'text', text: 'Response' }],
@@ -159,7 +159,7 @@ describe('AnthropicAdapter', () => {
 
       const adapter = new AnthropicAdapter({ apiKey: 'test-key' });
       const response = await adapter.complete({
-        model: 'claude-haiku-3-20240307',
+        model: 'claude-3-haiku-20240307',
         systemPrompt: 'sys',
         userPrompt: 'user',
       });
@@ -212,8 +212,8 @@ describe('AnthropicAdapter', () => {
       });
     });
 
-    it('should have pricing for claude-haiku-3-20240307', () => {
-      expect(ANTHROPIC_PRICING['claude-haiku-3-20240307']).toEqual({
+    it('should have pricing for claude-3-haiku-20240307', () => {
+      expect(ANTHROPIC_PRICING['claude-3-haiku-20240307']).toEqual({
         input: 0.00025,
         output: 0.00125,
       });
