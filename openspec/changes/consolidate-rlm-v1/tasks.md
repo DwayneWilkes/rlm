@@ -226,29 +226,29 @@ Paper: "chunking by Markdown headers" pattern
 - [x] Run `pnpm test` - all 882 tests pass (488 core + 394 CLI)
 - [x] Run `pnpm typecheck` - no type errors
 - [x] Run `pnpm lint` - no lint errors (no lint script configured)
-- [ ] Run `openspec validate consolidate-rlm-v1 --strict`
+- [x] Run `openspec validate consolidate-rlm-v1 --strict`
 
 ### Phase 1 Verification
 
-- [ ] Verify `--repl.backend native` uses native Python
-- [ ] Verify Haiku model doesn't hit max_tokens error
-- [ ] Verify API errors include model name
+- [x] Verify `--repl.backend native` uses native Python (factory.test.ts)
+- [x] Verify Haiku model doesn't hit max_tokens error (anthropic.test.ts)
+- [x] Verify API errors include model name (anthropic.test.ts)
 
 ### Phase 2 Verification
 
-- [ ] Verify all helpers work in Pyodide sandbox
-- [ ] Verify all helpers work in native sandbox
-- [ ] Verify `batch_rlm_query` executes concurrently
-- [ ] Verify budget enforced for batch queries
+- [x] Verify all helpers work in Pyodide sandbox (sandbox.test.ts)
+- [x] Verify all helpers work in native sandbox (native-python.test.ts)
+- [x] Verify `batch_rlm_query` executes concurrently (executor.test.ts)
+- [x] Verify budget enforced for batch queries (executor.test.ts)
 
 ### Phase 3 Verification
 
-- [ ] Verify `--profile local` uses Ollama
-- [ ] Verify `--profile cloud` uses Claude
-- [ ] Verify `rlm config list` shows all profiles
-- [ ] Verify profile extends works correctly
+- [x] Verify `--profile local` uses Ollama (run.test.ts)
+- [x] Verify `--profile cloud` uses Claude (run.test.ts)
+- [x] Verify `rlm config list` shows all profiles (config.test.ts)
+- [x] Verify profile extends works correctly (loader.test.ts)
 
-### Manual E2E Test
+### Manual E2E Test (requires LLM connection)
 
 - [ ] Run repo analysis with `--profile research`
 - [ ] Confirm RLM uses `batch_rlm_query` for parallel sub-tasks
