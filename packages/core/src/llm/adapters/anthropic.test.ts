@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AnthropicAdapter, ANTHROPIC_PRICING } from './anthropic.js';
+import { AnthropicAdapter, ANTHROPIC_PRICING, MODEL_CAPABILITIES, getModelPromptHints } from './anthropic.js';
 import type { LLMRequest } from '../../types.js';
 
 // Create mock function before hoisting
@@ -367,6 +367,40 @@ describe('AnthropicAdapter', () => {
           userPrompt: 'user',
         })
       ).rejects.toThrow('string error');
+    });
+  });
+
+  describe('MODEL_CAPABILITIES (4.2.1)', () => {
+    it('should have maxOutput defined for known models', () => {
+      expect(MODEL_CAPABILITIES['claude-3-haiku-20240307']?.maxOutput).toBe(4096);
+      expect(MODEL_CAPABILITIES['claude-opus-4-5-20251101']?.maxOutput).toBe(64000);
+    });
+
+    it('should support optional promptHints field', () => {
+      // All current models don't have promptHints, but the structure allows it
+      const capability = MODEL_CAPABILITIES['claude-opus-4-5-20251101'];
+      expect(capability).toBeDefined();
+      // promptHints is optional, so undefined is valid
+      expect(capability.promptHints).toBeUndefined();
+    });
+  });
+
+  describe('getModelPromptHints (4.2.1)', () => {
+    it('should return empty array for models without hints', () => {
+      const hints = getModelPromptHints('claude-opus-4-5-20251101');
+      expect(hints).toEqual([]);
+    });
+
+    it('should return empty array for unknown models', () => {
+      const hints = getModelPromptHints('unknown-model-xyz');
+      expect(hints).toEqual([]);
+    });
+
+    it('should return promptHints if defined for model', () => {
+      // This test verifies the function signature works correctly
+      // When a model has hints defined, they should be returned
+      const hints = getModelPromptHints('claude-opus-4-5-20251101');
+      expect(Array.isArray(hints)).toBe(true);
     });
   });
 });

@@ -53,10 +53,22 @@ export const ANTHROPIC_PRICING: Record<string, ModelPricing> = {
 const DEFAULT_PRICING: ModelPricing = { input: 0.003, output: 0.015 };
 
 /**
- * Model capabilities for output token limits.
- * Used to prevent exceeding model-specific limits.
+ * Model capability definition including output limits and optional prompt hints.
  */
-export const MODEL_CAPABILITIES: Record<string, { maxOutput: number }> = {
+export interface ModelCapability {
+  /** Maximum output tokens the model supports */
+  maxOutput: number;
+  /** Optional hints to include in the system prompt for this model */
+  promptHints?: string[];
+}
+
+/**
+ * Model capabilities for output token limits and prompt hints.
+ * Used to prevent exceeding model-specific limits and provide model-tuned guidance.
+ *
+ * Paper evidence: "Qwen3-Coder needed extra warning about sub-call usage"
+ */
+export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
   // Claude 4.5
   'claude-opus-4-5-20251101': { maxOutput: 64000 },
   'claude-sonnet-4-5-20250929': { maxOutput: 64000 },
@@ -69,6 +81,16 @@ export const MODEL_CAPABILITIES: Record<string, { maxOutput: number }> = {
   'claude-3-7-sonnet-20250219': { maxOutput: 64000 },
   'claude-3-haiku-20240307': { maxOutput: 4096 },
 };
+
+/**
+ * Get prompt hints for a specific model.
+ *
+ * @param model - Model identifier
+ * @returns Array of prompt hints, or empty array if none defined
+ */
+export function getModelPromptHints(model: string): string[] {
+  return MODEL_CAPABILITIES[model]?.promptHints ?? [];
+}
 
 /** Default max output tokens for unknown models */
 const DEFAULT_MAX_OUTPUT = 8192;

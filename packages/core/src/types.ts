@@ -54,9 +54,8 @@ export interface SandboxBridgesInterface {
  * });
  * ```
  *
- * TODO: Remove fallback in v1.0 - Once CLI is the primary entry point,
- * consider making sandboxFactory required or moving all backend
- * implementations to core.
+ * Design: sandboxFactory is optional with a Pyodide fallback in core.
+ * CLI injects native/daemon backends via this factory.
  */
 export type SandboxFactory = (
   config: REPLConfig,
@@ -124,6 +123,22 @@ export interface RLMConfig {
    * This enables CLI to inject native Python or daemon-based sandboxes.
    */
   sandboxFactory?: SandboxFactory;
+  /**
+   * Model-specific prompt hints to include in the system prompt.
+   * These hints help guide the LLM for optimal RLM execution.
+   * Overrides any hints defined in MODEL_CAPABILITIES for this model.
+   *
+   * Paper evidence: "Qwen3-Coder needed extra warning about sub-call usage"
+   *
+   * @example
+   * ```typescript
+   * promptHints: [
+   *   "Prefer batch_rlm_query() over sequential rlm_query() calls",
+   *   "Limit sub-calls to 5 per iteration"
+   * ]
+   * ```
+   */
+  promptHints?: string[];
 }
 
 /**
@@ -153,6 +168,10 @@ export interface Budget {
   maxDepth: number;
   /** Maximum REPL iterations before forcing answer */
   maxIterations: number;
+  /** Maximum concurrent sub-RLMs in batch_rlm_query (default: 5) */
+  maxBatchConcurrency?: number;
+  /** Maximum tasks in a single batch_rlm_query call (default: 10) */
+  maxBatchSize?: number;
 }
 
 /**
