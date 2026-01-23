@@ -252,7 +252,7 @@ Paper: "chunking by Markdown headers" pattern
 
 - [ ] Run repo analysis with `--profile research`
 - [ ] Confirm RLM uses `batch_rlm_query` for parallel sub-tasks
-- [ ] Confirm native backend works end-to-end
+- [x] Confirm native backend works end-to-end (rlm-claude-code.e2e.test.ts)
 
 ---
 
