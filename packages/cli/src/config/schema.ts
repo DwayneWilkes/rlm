@@ -84,6 +84,8 @@ export const ProfileSchema = z.object({
   subcallProvider: ProviderSchema.optional(),
   /** Model for subcalls (defaults to main model) */
   subcallModel: z.string().optional(),
+  /** Model-specific prompt hints for optimal RLM execution */
+  promptHints: z.array(z.string()).optional(),
   /** Budget limits */
   budget: BudgetConfigSchema.optional(),
   /** REPL/sandbox settings */
@@ -134,6 +136,8 @@ export const ConfigSchema = z
     subcallProvider: ProviderSchema.optional(),
     /** Model for subcalls (llm_query, sub-RLMs) - defaults to main model */
     subcallModel: z.string().optional(),
+    /** Model-specific prompt hints for optimal RLM execution */
+    promptHints: z.array(z.string()).optional(),
     /** Budget limits */
     budget: BudgetConfigSchema,
     /** REPL/sandbox settings */

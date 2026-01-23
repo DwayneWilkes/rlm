@@ -16,4 +16,4 @@ export {
   type OutputConfig,
 } from './schema.js';
 
-export { loadConfig, mergeConfig, getConfigPath } from './loader.js';
+export { loadConfig, mergeConfig, getConfigPath, resolveProfile } from './loader.js';

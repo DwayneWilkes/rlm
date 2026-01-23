@@ -1,0 +1,59 @@
+# RLM Configuration Template
+# Copy to ~/.rlmrc.yaml or .rlmrc.yaml in your project root
+
+# Default profile to use when no --profile flag is given
+default: local
+
+# Named configuration profiles
+profiles:
+  # Local execution with Ollama (free, private)
+  local:
+    provider: ollama
+    model: qwen2.5-coder:14b
+    budget:
+      maxCost: 0  # Ollama is free
+      maxIterations: 50
+      maxDepth: 3
+      maxTime: 600000  # 10 minutes
+    repl:
+      backend: native
+      timeout: 60000
+
+  # Cloud execution with Claude (paid, high quality)
+  cloud:
+    provider: anthropic
+    model: claude-sonnet-4-5-20250929
+    subcallModel: claude-3-haiku-20240307  # Cheaper model for subcalls
+    budget:
+      maxCost: 10.0
+      maxIterations: 30
+      maxDepth: 2
+      maxTime: 300000
+    repl:
+      backend: auto
+      timeout: 30000
+
+  # Hybrid: Cloud for main reasoning, local for subcalls
+  hybrid:
+    provider: anthropic
+    model: claude-sonnet-4-5-20250929
+    subcallProvider: ollama
+    subcallModel: qwen2.5-coder:14b
+    budget:
+      maxCost: 5.0
+      maxIterations: 30
+      maxDepth: 3
+      maxTime: 300000
+    repl:
+      backend: native
+      timeout: 30000
+
+  # Research: High limits for deep analysis
+  research:
+    extends: cloud
+    model: claude-opus-4-5-20251101
+    budget:
+      maxCost: 50.0
+      maxIterations: 100
+      maxDepth: 5
+      maxTime: 1800000  # 30 minutes

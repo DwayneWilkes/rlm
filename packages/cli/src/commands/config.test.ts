@@ -12,6 +12,7 @@ import { createConfigCommand } from './config.js';
 vi.mock('../config/index.js', () => ({
   loadConfig: vi.fn(),
   getConfigPath: vi.fn(),
+  resolveProfile: vi.fn((config) => config), // Identity by default
 }));
 
 // Mock the yaml module
@@ -19,11 +20,12 @@ vi.mock('yaml', () => ({
   stringify: vi.fn((obj) => `provider: ${obj.provider}\nmodel: ${obj.model}\n`),
 }));
 
-import { loadConfig, getConfigPath } from '../config/index.js';
+import { loadConfig, getConfigPath, resolveProfile } from '../config/index.js';
 import { stringify as yamlStringify } from 'yaml';
 
 const mockLoadConfig = vi.mocked(loadConfig);
 const mockGetConfigPath = vi.mocked(getConfigPath);
+const mockResolveProfile = vi.mocked(resolveProfile);
 const mockYamlStringify = vi.mocked(yamlStringify);
 
 describe('createConfigCommand', () => {
@@ -32,6 +34,8 @@ describe('createConfigCommand', () => {
   beforeEach(() => {
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.clearAllMocks();
+    // resolveProfile returns config unchanged by default
+    mockResolveProfile.mockImplementation((config) => config);
   });
 
   afterEach(() => {

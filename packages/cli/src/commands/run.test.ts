@@ -12,6 +12,7 @@ import { createRunCommand } from './run.js';
 vi.mock('../config/index.js', () => ({
   loadConfig: vi.fn(),
   mergeConfig: vi.fn(),
+  resolveProfile: vi.fn((config: unknown) => config), // Identity by default
 }));
 
 vi.mock('../sandbox/index.js', () => ({
@@ -40,7 +41,7 @@ vi.mock('pdf-parse', () => ({
   PDFParse: vi.fn(),
 }));
 
-import { loadConfig, mergeConfig } from '../config/index.js';
+import { loadConfig, mergeConfig, resolveProfile } from '../config/index.js';
 import { createSandbox, detectBestBackend } from '../sandbox/index.js';
 import { createFormatter } from '../output/index.js';
 import { RLM } from '@rlm/core';
@@ -50,6 +51,7 @@ import { PDFParse } from 'pdf-parse';
 
 const mockLoadConfig = vi.mocked(loadConfig);
 const mockMergeConfig = vi.mocked(mergeConfig);
+const mockResolveProfile = vi.mocked(resolveProfile);
 const mockCreateSandbox = vi.mocked(createSandbox);
 const mockDetectBestBackend = vi.mocked(detectBestBackend);
 const mockCreateFormatter = vi.mocked(createFormatter);
@@ -84,6 +86,9 @@ describe('createRunCommand', () => {
       ...fileConfig,
       ...cliFlags,
     }) as any);
+
+    // resolveProfile returns config unchanged by default
+    mockResolveProfile.mockImplementation((config) => config);
 
     mockDetectBestBackend.mockResolvedValue('native');
     mockCreateSandbox.mockReturnValue({} as any);
@@ -535,6 +540,76 @@ describe('createRunCommand', () => {
           }),
           mockBridges
         );
+      });
+    });
+
+    describe('profile resolution', () => {
+      it('should pass profile name to resolveProfile', async () => {
+        mockExecute.mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          trace: {},
+          usage: {},
+          warnings: [],
+        });
+
+        const program = new Command().addCommand(createRunCommand());
+        await program.parseAsync(['run', 'Task', '--profile', 'cloud'], { from: 'user' });
+
+        // Verify resolveProfile was called with the profile name
+        expect(mockResolveProfile).toHaveBeenCalledWith(expect.anything(), 'cloud');
+      });
+
+      it('should use RLM_PROFILE env var when no --profile flag', async () => {
+        const originalEnv = process.env.RLM_PROFILE;
+        process.env.RLM_PROFILE = 'local';
+
+        mockExecute.mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          trace: {},
+          usage: {},
+          warnings: [],
+        });
+
+        const program = new Command().addCommand(createRunCommand());
+        await program.parseAsync(['run', 'Task'], { from: 'user' });
+
+        // Verify resolveProfile was called with env var value
+        expect(mockResolveProfile).toHaveBeenCalledWith(expect.anything(), 'local');
+
+        // Restore env
+        if (originalEnv === undefined) {
+          delete process.env.RLM_PROFILE;
+        } else {
+          process.env.RLM_PROFILE = originalEnv;
+        }
+      });
+
+      it('should prefer --profile flag over RLM_PROFILE env var', async () => {
+        const originalEnv = process.env.RLM_PROFILE;
+        process.env.RLM_PROFILE = 'local';
+
+        mockExecute.mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          trace: {},
+          usage: {},
+          warnings: [],
+        });
+
+        const program = new Command().addCommand(createRunCommand());
+        await program.parseAsync(['run', 'Task', '--profile', 'cloud'], { from: 'user' });
+
+        // Verify resolveProfile was called with CLI flag, not env var
+        expect(mockResolveProfile).toHaveBeenCalledWith(expect.anything(), 'cloud');
+
+        // Restore env
+        if (originalEnv === undefined) {
+          delete process.env.RLM_PROFILE;
+        } else {
+          process.env.RLM_PROFILE = originalEnv;
+        }
       });
     });
   });

@@ -10,7 +10,7 @@ import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { RLM, type SandboxFactory } from '@rlm/core';
 import { PDFParse } from 'pdf-parse';
-import { loadConfig, mergeConfig, type Config } from '../config/index.js';
+import { loadConfig, mergeConfig, resolveProfile, type Config } from '../config/index.js';
 import { detectBestBackend, createSandbox } from '../sandbox/index.js';
 import { createFormatter, type OutputFormat } from '../output/index.js';
 import { validateFilePathOrThrow } from '../utils/index.js';
@@ -22,6 +22,7 @@ import type { SandboxBackend } from '../types/index.js';
 interface RunOptions {
   context?: string;
   config?: string;
+  profile?: string;
   format?: OutputFormat;
   backend?: 'native' | 'pyodide' | 'daemon';
   maxIterations?: number;
@@ -57,6 +58,7 @@ export function createRunCommand(): Command {
     .argument('<task>', 'The task description to execute (quoted string)')
     .option('-x, --context <file>', 'Path to context file to include with the task')
     .option('-c, --config <file>', 'Path to custom config file (.rlmrc.yaml)')
+    .option('-p, --profile <name>', 'Configuration profile to use (or set RLM_PROFILE env var)')
     .option(
       '-f, --format <format>',
       'Output format: text (human-readable), json, or yaml',
@@ -87,25 +89,29 @@ export function createRunCommand(): Command {
         // Load config from file
         const fileConfig = await loadConfig(options.config);
 
+        // Resolve profile: CLI option > env var > config default
+        const profileName = options.profile ?? process.env.RLM_PROFILE;
+        const resolvedConfig = resolveProfile(fileConfig, profileName);
+
         // Build CLI overrides
         const cliOverrides: Partial<Config> = {
           output: {
-            format: options.format ?? fileConfig.output.format,
+            format: options.format ?? resolvedConfig.output.format,
           },
           repl: {
-            ...fileConfig.repl,
-            backend: options.backend ?? fileConfig.repl.backend,
+            ...resolvedConfig.repl,
+            backend: options.backend ?? resolvedConfig.repl.backend,
           },
           budget: {
-            maxCost: options.maxCost ?? fileConfig.budget.maxCost,
-            maxIterations: options.maxIterations ?? fileConfig.budget.maxIterations,
-            maxDepth: options.maxDepth ?? fileConfig.budget.maxDepth,
-            maxTime: options.maxTime ?? fileConfig.budget.maxTime,
+            maxCost: options.maxCost ?? resolvedConfig.budget.maxCost,
+            maxIterations: options.maxIterations ?? resolvedConfig.budget.maxIterations,
+            maxDepth: options.maxDepth ?? resolvedConfig.budget.maxDepth,
+            maxTime: options.maxTime ?? resolvedConfig.budget.maxTime,
           },
         };
 
-        // Merge configs
-        const config = mergeConfig(fileConfig, cliOverrides);
+        // Merge configs (CLI flags take precedence over resolved profile)
+        const config = mergeConfig(resolvedConfig, cliOverrides);
 
         // Resolve backend if 'auto'
         let backend = config.repl.backend;
