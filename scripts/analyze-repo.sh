@@ -23,7 +23,7 @@ echo "Gathering repository context..."
     echo ""
     echo "Directory tree:"
     find "$REPO_ROOT" -type f \( -name "*.ts" -o -name "*.py" -o -name "*.json" -o -name "*.md" \) \
-        ! -path "*/node_modules/*" ! -path "*/.git/*" ! -path "*/dist/*" \
+        ! -path "*/node_modules/*" ! -path "*/.git/*" ! -path "*/dist/*" ! -path "*/analysis-runs/*" \
         | sed "s|$REPO_ROOT/||" | sort
 
     echo ""
@@ -55,6 +55,30 @@ echo "Gathering repository context..."
     cat "$REPO_ROOT/packages/cli/src/index.ts"
 
     echo ""
+    echo "=== CORE SOURCE FILES ==="
+    for file in "$REPO_ROOT"/packages/core/src/**/*.ts; do
+        if [[ ! "$file" =~ \.test\.ts$ ]] && [[ -f "$file" ]]; then
+            echo ""
+            echo "--- FILE: ${file#$REPO_ROOT/} ---"
+            cat "$file"
+        fi
+    done
+
+    echo ""
+    echo "=== CLI SOURCE FILES ==="
+    for file in "$REPO_ROOT"/packages/cli/src/**/*.ts; do
+        if [[ ! "$file" =~ \.test\.ts$ ]] && [[ -f "$file" ]]; then
+            echo ""
+            echo "--- FILE: ${file#$REPO_ROOT/} ---"
+            cat "$file"
+        fi
+    done
+
+    echo ""
+    echo "=== PYTHON SANDBOX ==="
+    cat "$REPO_ROOT/packages/core/python/rlm_sandbox.py"
+
+    echo ""
     echo "=== OPENSPEC CHANGES ==="
     if [ -d "$REPO_ROOT/openspec/changes" ]; then
         for dir in "$REPO_ROOT/openspec/changes"/*/; do
@@ -76,7 +100,7 @@ echo "Gathering repository context..."
     echo "Core tests: $(find "$REPO_ROOT/packages/core" -name "*.test.ts" | wc -l) test files"
     echo "CLI tests: $(find "$REPO_ROOT/packages/cli" -name "*.test.ts" | wc -l) test files"
 
-} > "$CONTEXT_FILE"
+} | iconv -c -t UTF-8 > "$CONTEXT_FILE"
 
 echo "Context gathered ($(wc -c < "$CONTEXT_FILE") bytes)"
 echo "Running RLM analysis..."
@@ -114,6 +138,7 @@ Use the helper functions to verify your findings:
 Format your output as a well-structured markdown document.
 Start with '# RLM Repository Analysis' and include a timestamp.
 Be thorough but concise.
+IMPORTANT: Do NOT use emojis or special Unicode symbols - use plain ASCII text only (e.g., use [x] instead of checkmarks).
 
 IMPORTANT: Store your final markdown in a variable called 'report' and end with FINAL_VAR(report).
 Example:
