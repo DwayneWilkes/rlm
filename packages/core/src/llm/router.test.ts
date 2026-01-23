@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LLMRouter } from './router.js';
 import type { LLMAdapter, LLMRequest, LLMResponse } from '../types.js';
 
@@ -133,6 +133,83 @@ describe('LLMRouter', () => {
       expect(ollamaResponse.content).toBe('Ollama response');
       expect(anthropicResponse.content).toBe('Anthropic response');
       expect(openaiResponse.content).toBe('OpenAI response');
+    });
+  });
+
+  describe('rate limiting (4.1.4)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('should allow setRateLimit configuration', () => {
+      const adapter = createMockAdapter();
+      router.register('anthropic', adapter);
+      router.setRateLimit('anthropic', { requestsPerMinute: 60 });
+
+      // Should not throw
+      expect(router.isRateLimited('anthropic')).toBe(false);
+    });
+
+    it('should not rate limit by default', async () => {
+      const adapter = createMockAdapter();
+      router.register('test', adapter);
+
+      expect(router.isRateLimited('test')).toBe(false);
+
+      // Make many requests quickly
+      for (let i = 0; i < 100; i++) {
+        await router.complete('test', {
+          model: 'model',
+          systemPrompt: 'sys',
+          userPrompt: 'user',
+        });
+      }
+
+      // All should complete without rate limiting
+      expect(adapter.complete).toHaveBeenCalledTimes(100);
+    });
+
+    it('should track rate limit status', async () => {
+      const adapter = createMockAdapter();
+      router.register('anthropic', adapter);
+      router.setRateLimit('anthropic', { requestsPerMinute: 60, burstSize: 2 });
+
+      const request = { model: 'm', systemPrompt: 's', userPrompt: 'u' };
+
+      // First two requests should not be rate limited
+      expect(router.isRateLimited('anthropic')).toBe(false);
+      await router.complete('anthropic', request);
+
+      expect(router.isRateLimited('anthropic')).toBe(false);
+      await router.complete('anthropic', request);
+
+      // Now should be rate limited
+      expect(router.isRateLimited('anthropic')).toBe(true);
+    });
+
+    it('should wait when rate limited', async () => {
+      const adapter = createMockAdapter();
+      router.register('anthropic', adapter);
+      router.setRateLimit('anthropic', { requestsPerMinute: 60, burstSize: 1 });
+
+      const request = { model: 'm', systemPrompt: 's', userPrompt: 'u' };
+
+      // Use the single token
+      await router.complete('anthropic', request);
+      expect(adapter.complete).toHaveBeenCalledTimes(1);
+
+      // Next request will wait
+      const completionPromise = router.complete('anthropic', request);
+
+      // Advance time
+      vi.advanceTimersByTime(1000);
+
+      await completionPromise;
+      expect(adapter.complete).toHaveBeenCalledTimes(2);
     });
   });
 });
