@@ -29,6 +29,8 @@ export type WorkerResponse =
   | { type: 'variable'; id: string; value: unknown }
   | { type: 'bridge:llm'; id: string; prompt: string }
   | { type: 'bridge:rlm'; id: string; task: string; context: string }
+  | { type: 'bridge:batch_llm'; id: string; prompts: string[] }
+  | { type: 'bridge:batch_rlm'; id: string; tasks: Array<{ task: string; context?: string }> }
   | { type: 'error'; message: string };
 
 // Only run worker code if we're actually in a worker context
@@ -63,6 +65,26 @@ if (parentPort) {
       return new Promise((resolve, reject) => {
         pendingBridges.set(id, { resolve: resolve as (value: unknown) => void, reject });
         parentPort!.postMessage({ type: 'bridge:rlm', id, task, context } satisfies WorkerResponse);
+      });
+    };
+  }
+
+  function createBatchLLMBridge(): (prompts: string[]) => Promise<string[]> {
+    return async (prompts: string[]): Promise<string[]> => {
+      const id = generateId();
+      return new Promise((resolve, reject) => {
+        pendingBridges.set(id, { resolve: resolve as (value: unknown) => void, reject });
+        parentPort!.postMessage({ type: 'bridge:batch_llm', id, prompts } satisfies WorkerResponse);
+      });
+    };
+  }
+
+  function createBatchRLMBridge(): (tasks: Array<{ task: string; context?: string }>) => Promise<string[]> {
+    return async (tasks: Array<{ task: string; context?: string }>): Promise<string[]> => {
+      const id = generateId();
+      return new Promise((resolve, reject) => {
+        pendingBridges.set(id, { resolve: resolve as (value: unknown) => void, reject });
+        parentPort!.postMessage({ type: 'bridge:batch_rlm', id, tasks } satisfies WorkerResponse);
       });
     };
   }
@@ -103,6 +125,8 @@ if (parentPort) {
           pyodide.globals.set('__context_ref__', msg.context);
           pyodide.globals.set('__llm_query_bridge__', createLLMBridge());
           pyodide.globals.set('__rlm_query_bridge__', createRLMBridge());
+          pyodide.globals.set('__batch_llm_query_bridge__', createBatchLLMBridge());
+          pyodide.globals.set('__batch_rlm_query_bridge__', createBatchRLMBridge());
 
           // Run setup code
           await pyodide.runPythonAsync(PYTHON_SETUP_WORKER);

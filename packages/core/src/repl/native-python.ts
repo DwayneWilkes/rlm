@@ -420,6 +420,10 @@ export class NativePythonSandbox implements Sandbox {
         // Handle batch LLM queries in parallel
         const prompts = (request.params?.prompts as string[]) ?? [];
         result = await this.handleBatchLLM(prompts);
+      } else if (request.method === 'bridge:batch_rlm') {
+        // Handle batch RLM queries
+        const tasks = (request.params?.tasks as Array<{ task: string; context?: string }>) ?? [];
+        result = await this.handleBatchRLM(tasks);
       } else {
         throw new Error(`Unknown bridge method: ${request.method}`);
       }
@@ -469,6 +473,44 @@ export class NativePythonSandbox implements Sandbox {
     );
 
     debug(' Batch complete, got', results.length, 'responses');
+
+    return results;
+  }
+
+  /**
+   * Handle batch RLM queries using the onBatchRLMQuery bridge if available,
+   * otherwise fall back to sequential execution.
+   *
+   * @param tasks - Array of tasks to process
+   * @returns Array of results in the same order as tasks
+   */
+  private async handleBatchRLM(tasks: Array<{ task: string; context?: string }>): Promise<string[]> {
+    if (tasks.length === 0) {
+      return [];
+    }
+
+    debug(' Processing batch of', tasks.length, 'RLM queries');
+
+    // Use dedicated batch handler if available
+    if (this.bridges.onBatchRLMQuery) {
+      const results = await this.bridges.onBatchRLMQuery(tasks);
+      debug(' Batch complete, got', results.length, 'responses');
+      return results;
+    }
+
+    // Fallback: process using onRLMQuery (via Promise.all for parallelism)
+    const results = await Promise.all(
+      tasks.map(async (task) => {
+        try {
+          return await this.bridges.onRLMQuery(task.task, task.context);
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          return `[Error: ${errorMessage}]`;
+        }
+      })
+    );
+
+    debug(' Batch complete (fallback), got', results.length, 'responses');
 
     return results;
   }

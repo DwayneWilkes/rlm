@@ -6,6 +6,16 @@ import {
 } from './pyodide.js';
 
 /**
+ * A task for batch RLM query execution.
+ */
+export interface BatchRLMTask {
+  /** The task/question for the sub-RLM */
+  task: string;
+  /** Optional context override (defaults to current context) */
+  context?: string;
+}
+
+/**
  * Bridge callbacks for LLM interactions from within Python code.
  */
 export interface SandboxBridges {
@@ -23,6 +33,14 @@ export interface SandboxBridges {
    * @returns The sub-RLM response
    */
   onRLMQuery: (task: string, context?: string) => Promise<string>;
+
+  /**
+   * Called when Python code invokes batch_rlm_query().
+   * Executes multiple sub-RLMs concurrently.
+   * @param tasks - Array of tasks to execute
+   * @returns Array of results in the same order as input tasks
+   */
+  onBatchRLMQuery?: (tasks: BatchRLMTask[]) => Promise<string[]>;
 }
 
 /**

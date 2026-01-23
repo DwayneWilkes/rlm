@@ -163,6 +163,17 @@ export type { BudgetWarningHandler } from './budget/controller.js';
 export { LLMRouter } from './llm/router.js';
 
 /**
+ * Rate limiter for controlling API request frequency.
+ *
+ * @example
+ * ```typescript
+ * const router = new LLMRouter('anthropic');
+ * router.setRateLimit('anthropic', { requestsPerMinute: 60 });
+ * ```
+ */
+export { RateLimiter, type RateLimitConfig } from './llm/rate-limiter.js';
+
+/**
  * Ollama adapter for local LLM inference.
  */
 export { OllamaAdapter } from './llm/adapters/ollama.js';
@@ -217,7 +228,7 @@ export { ClaudeCodeAdapter } from './llm/adapters/claude-code.js';
  * ```
  */
 export { createSandbox } from './repl/sandbox.js';
-export type { Sandbox, SandboxBridges } from './repl/sandbox.js';
+export type { Sandbox, SandboxBridges, BatchRLMTask } from './repl/sandbox.js';
 
 /**
  * Native Python sandbox for high-performance execution.

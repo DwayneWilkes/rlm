@@ -266,6 +266,85 @@ export class WorkerPyodideSandbox implements Sandbox {
 				break;
 			}
 
+			case "bridge:batch_llm": {
+				// Handle batch LLM bridge call from worker
+				// Process all prompts in parallel
+				Promise.all(
+					msg.prompts.map(async (prompt: string) => {
+						try {
+							return await this.bridges.onLLMQuery(prompt);
+						} catch (err) {
+							const errorMessage = err instanceof Error ? err.message : String(err);
+							return `[Error: ${errorMessage}]`;
+						}
+					})
+				)
+					.then((results) => {
+						this.worker?.postMessage({
+							type: "bridge:response",
+							id: msg.id,
+							result: results,
+						});
+					})
+					.catch((error: Error) => {
+						this.worker?.postMessage({
+							type: "bridge:response",
+							id: msg.id,
+							error: error.message,
+						});
+					});
+				break;
+			}
+
+			case "bridge:batch_rlm": {
+				// Handle batch RLM bridge call from worker
+				if (!this.bridges.onBatchRLMQuery) {
+					// Fallback: execute sequentially using onRLMQuery
+					Promise.all(
+						msg.tasks.map(async (task: { task: string; context?: string }) => {
+							try {
+								return await this.bridges.onRLMQuery(task.task, task.context);
+							} catch (err) {
+								const errorMessage = err instanceof Error ? err.message : String(err);
+								return `[Error: ${errorMessage}]`;
+							}
+						})
+					)
+						.then((results) => {
+							this.worker?.postMessage({
+								type: "bridge:response",
+								id: msg.id,
+								result: results,
+							});
+						})
+						.catch((error: Error) => {
+							this.worker?.postMessage({
+								type: "bridge:response",
+								id: msg.id,
+								error: error.message,
+							});
+						});
+				} else {
+					// Use the dedicated batch handler
+					this.bridges.onBatchRLMQuery(msg.tasks)
+						.then((results) => {
+							this.worker?.postMessage({
+								type: "bridge:response",
+								id: msg.id,
+								result: results,
+							});
+						})
+						.catch((error: Error) => {
+							this.worker?.postMessage({
+								type: "bridge:response",
+								id: msg.id,
+								error: error.message,
+							});
+						});
+				}
+				break;
+			}
+
 			case "error":
 				console.error("Worker error:", msg.message);
 				break;
@@ -419,6 +498,44 @@ export class DirectPyodideSandbox implements Sandbox {
 		this.pyodide.globals.set(
 			"__rlm_query_bridge__",
 			this.bridges.onRLMQuery,
+		);
+		this.pyodide.globals.set(
+			"__batch_llm_query_bridge__",
+			async (prompts: string[]): Promise<string[]> => {
+				if (prompts.length === 0) return [];
+				// Process all prompts in parallel
+				return Promise.all(
+					prompts.map(async (prompt) => {
+						try {
+							return await this.bridges.onLLMQuery(prompt);
+						} catch (err) {
+							const errorMessage = err instanceof Error ? err.message : String(err);
+							return `[Error: ${errorMessage}]`;
+						}
+					})
+				);
+			},
+		);
+		this.pyodide.globals.set(
+			"__batch_rlm_query_bridge__",
+			async (tasks: Array<{ task: string; context?: string }>): Promise<string[]> => {
+				if (tasks.length === 0) return [];
+				// Use dedicated batch handler if available, otherwise fallback
+				if (this.bridges.onBatchRLMQuery) {
+					return this.bridges.onBatchRLMQuery(tasks);
+				}
+				// Fallback: execute using onRLMQuery (sequentially via Promise.all)
+				return Promise.all(
+					tasks.map(async (task) => {
+						try {
+							return await this.bridges.onRLMQuery(task.task, task.context);
+						} catch (err) {
+							const errorMessage = err instanceof Error ? err.message : String(err);
+							return `[Error: ${errorMessage}]`;
+						}
+					})
+				);
+			},
 		);
 		this.pyodide.globals.set("__context_ref__", context);
 

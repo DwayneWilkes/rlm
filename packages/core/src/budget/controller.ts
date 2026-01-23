@@ -310,6 +310,24 @@ export class BudgetController {
   }
 
   /**
+   * Get the maximum concurrency for batch RLM queries.
+   *
+   * @returns The configured maxBatchConcurrency or default of 5
+   */
+  getBatchConcurrency(): number {
+    return this.budget.maxBatchConcurrency ?? 5;
+  }
+
+  /**
+   * Get the maximum batch size for batch RLM queries.
+   *
+   * @returns The configured maxBatchSize or default of 10
+   */
+  getMaxBatchSize(): number {
+    return this.budget.maxBatchSize ?? 10;
+  }
+
+  /**
    * Check if budget is too low and subcalls should use llm_query instead.
    *
    * Returns true when remaining resources are below thresholds:
