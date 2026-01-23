@@ -1,55 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { TextFormatter } from './text.js';
-import type { RLMResult, ExecutionTrace, Usage } from '@rlm/core';
-
-/**
- * Create a mock RLMResult for testing.
- */
-function createMockResult(overrides: Partial<RLMResult> = {}): RLMResult {
-  const defaultTrace: ExecutionTrace = {
-    id: 'test-execution-123',
-    depth: 0,
-    task: 'Test task',
-    iterations: [
-      {
-        index: 0,
-        prompt: { content: 'Test prompt', tokens: 100 },
-        response: { content: 'Test response', tokens: 50, cost: 0.001 },
-        codeExecutions: [
-          {
-            code: 'print("hello")',
-            stdout: 'hello\n',
-            stderr: '',
-            duration: 10,
-          },
-        ],
-      },
-    ],
-    subcalls: [],
-    finalAnswer: 'Test answer',
-    answerSource: 'final_direct',
-  };
-
-  const defaultUsage: Usage = {
-    cost: 0.001,
-    tokens: 150,
-    inputTokens: 100,
-    outputTokens: 50,
-    duration: 1500,
-    iterations: 1,
-    subcalls: 0,
-    maxDepthReached: 0,
-  };
-
-  return {
-    success: true,
-    output: 'Test output',
-    trace: defaultTrace,
-    usage: defaultUsage,
-    warnings: [],
-    ...overrides,
-  };
-}
+import { createMockResult } from './test-fixtures.js';
 
 describe('TextFormatter', () => {
   describe('format', () => {
