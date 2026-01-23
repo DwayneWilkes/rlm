@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { REPLConfig } from '../types/index.js';
 import type { Sandbox, SandboxBridges } from './sandbox.js';
+import { mockGlobals, simulatePython, resetPythonState } from './test-helpers/mock-python.js';
+import { DEFAULT_CONFIG, createMockBridges, withSandbox } from './test-helpers/sandbox-test-utils.js';
 
 /**
  * Mock Pyodide for unit tests.
@@ -9,559 +11,6 @@ import type { Sandbox, SandboxBridges } from './sandbox.js';
  * This mock simulates Python execution behavior for testing the sandbox wrapper.
  * Real Pyodide integration should be tested in browser or integration tests.
  */
-
-// Python execution state
-interface PythonState {
-  context: string;
-  variables: Map<string, unknown>;
-  stdout: string;
-  stderr: string;
-}
-
-let pythonState: PythonState;
-let bridges: { llm: Function | null; rlm: Function | null };
-
-function resetPythonState() {
-  pythonState = {
-    context: '',
-    variables: new Map(),
-    stdout: '',
-    stderr: '',
-  };
-  bridges = { llm: null, rlm: null };
-}
-
-// Mock globals object
-const mockGlobals = {
-  set: vi.fn((key: string, value: unknown) => {
-    if (key === 'context' || key === '__context_ref__') {
-      pythonState.context = String(value);
-    } else if (key === '__llm_query_bridge__') {
-      bridges.llm = value as Function;
-    } else if (key === '__rlm_query_bridge__') {
-      bridges.rlm = value as Function;
-    } else {
-      pythonState.variables.set(key, value);
-    }
-  }),
-  get: vi.fn((key: string) => {
-    if (pythonState.variables.has(key)) {
-      const val = pythonState.variables.get(key);
-      if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
-        return { toJs: () => val };
-      }
-      return val;
-    }
-    return undefined;
-  }),
-};
-
-// Simulate Python code execution
-async function simulatePython(code: string): Promise<unknown> {
-  // Setup stdout/stderr capture
-  if (code.includes('__stdout__ = StringIO()')) {
-    pythonState.stdout = '';
-    pythonState.stderr = '';
-    return undefined;
-  }
-
-  // Get stdout value
-  if (code.includes('__stdout__.getvalue()')) {
-    return pythonState.stdout;
-  }
-
-  // Get stderr value
-  if (code.includes('__stderr__.getvalue()')) {
-    return pythonState.stderr;
-  }
-
-  // Restore stdout/stderr
-  if (code.includes('sys.stdout = __old_stdout__') && !code.includes('getvalue')) {
-    return undefined;
-  }
-
-  // Setup code (bridge definitions)
-  if (code.includes('def llm_query') || code.includes('RLM sandbox ready')) {
-    return undefined;
-  }
-
-  // Raise statements
-  if (code.includes('raise ValueError')) {
-    throw new Error('ValueError: test error');
-  }
-  if (code.includes('raise ')) {
-    const m = code.match(/raise (\w+)\("([^"]+)"\)/);
-    if (m) throw new Error(`${m[1]}: ${m[2]}`);
-  }
-
-  // Syntax errors
-  if (code.includes('def incomplete(')) {
-    throw new Error('SyntaxError: unexpected EOF while parsing');
-  }
-
-  // Name errors
-  if (code.includes('print(undefined_variable)')) {
-    throw new Error("NameError: name 'undefined_variable' is not defined");
-  }
-
-  // Time sleep (for timeout tests)
-  if (code.includes('time.sleep(')) {
-    const m = code.match(/time\.sleep\((\d+)\)/);
-    if (m) {
-      await new Promise(resolve => setTimeout(resolve, parseInt(m[1], 10) * 1000));
-    }
-    return undefined;
-  }
-
-  // Stderr write
-  if (code.includes('sys.stderr.write(')) {
-    const m = code.match(/sys\.stderr\.write\("([^"]+)"\)/);
-    if (m) pythonState.stderr += m[1];
-    return undefined;
-  }
-
-  // Handle multiline code with multiple statements
-  const lines = code.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
-
-  for (const line of lines) {
-    await executePythonLine(line);
-  }
-
-  return undefined;
-}
-
-async function executePythonLine(line: string): Promise<void> {
-  // Variable assignment
-  const assignMatch = line.match(/^(\w+)\s*=\s*(.+)$/);
-  if (assignMatch) {
-    const [, varName, expr] = assignMatch;
-    const value = await evaluateExpression(expr);
-    pythonState.variables.set(varName, value);
-    return;
-  }
-
-  // Print statement
-  const printMatch = line.match(/^print\((.+)\)$/);
-  if (printMatch) {
-    const value = await evaluateExpression(printMatch[1]);
-    pythonState.stdout += String(value) + '\n';
-    return;
-  }
-
-  // llm_query call (not assigned)
-  if (line.includes('llm_query(') && !line.includes('=')) {
-    const m = line.match(/llm_query\("([^"]+)"\)/);
-    if (m && bridges.llm) {
-      await bridges.llm(m[1]);
-    }
-    return;
-  }
-
-  // rlm_query call (not assigned)
-  if (line.includes('rlm_query(') && !line.includes('=')) {
-    const withCtx = line.match(/rlm_query\("([^"]+)",\s*"([^"]+)"\)/);
-    const withoutCtx = line.match(/rlm_query\("([^"]+)"\)/);
-    if (bridges.rlm) {
-      if (withCtx) {
-        await bridges.rlm(withCtx[1], withCtx[2]);
-      } else if (withoutCtx) {
-        await bridges.rlm(withoutCtx[1], pythonState.context);
-      }
-    }
-    return;
-  }
-}
-
-async function evaluateExpression(expr: string): Promise<unknown> {
-  expr = expr.trim();
-
-  // String literal
-  if ((expr.startsWith('"') && expr.endsWith('"')) || (expr.startsWith("'") && expr.endsWith("'"))) {
-    return expr.slice(1, -1);
-  }
-
-  // Number literal
-  if (/^\d+$/.test(expr)) {
-    return parseInt(expr, 10);
-  }
-
-  // List literal
-  if (expr.startsWith('[') && expr.endsWith(']')) {
-    const inner = expr.slice(1, -1);
-    if (inner.includes(',')) {
-      return inner.split(',').map(s => parseInt(s.trim(), 10));
-    }
-    return [];
-  }
-
-  // Dict literal
-  if (expr.startsWith('{') && expr.endsWith('}')) {
-    // Simple dict parsing for test cases
-    const inner = expr.slice(1, -1);
-    const pairs = inner.split(',').map(p => {
-      const [k, v] = p.split(':').map(s => s.trim());
-      const key = k.replace(/["']/g, '');
-      let val: unknown = v.replace(/["']/g, '');
-      if (/^\d+$/.test(v)) val = parseInt(v, 10);
-      return [key, val];
-    });
-    return Object.fromEntries(pairs);
-  }
-
-  // len() function
-  const lenMatch = expr.match(/^len\((\w+)\)$/);
-  if (lenMatch) {
-    const val = pythonState.variables.get(lenMatch[1]) ?? pythonState.context;
-    if (typeof val === 'string') return val.length;
-    if (Array.isArray(val)) return val.length;
-    return 0;
-  }
-
-  // len(array[idx]) function - length of element at index
-  const lenArrayIdxMatch = expr.match(/^len\((\w+)\[(\d+)\]\)$/);
-  if (lenArrayIdxMatch) {
-    const arr = pythonState.variables.get(lenArrayIdxMatch[1]) as unknown[];
-    if (!arr) return 0;
-    const elem = arr[parseInt(lenArrayIdxMatch[2], 10)];
-    if (typeof elem === 'string') return elem.length;
-    if (Array.isArray(elem)) return elem.length;
-    return 0;
-  }
-
-  // repr() function
-  const reprMatch = expr.match(/^repr\((\w+)\)$/);
-  if (reprMatch) {
-    const val = pythonState.variables.get(reprMatch[1]) ?? pythonState.context;
-    return JSON.stringify(val);
-  }
-
-  // String multiplication: "x" * 200 or "0123456789" * 10
-  const strMulMatch = expr.match(/^"([^"]+)" \* (\d+)$/);
-  if (strMulMatch) {
-    return strMulMatch[1].repeat(parseInt(strMulMatch[2], 10));
-  }
-
-  // Variable * number
-  const mulMatch = expr.match(/^(\w+) \* (\d+)$/);
-  if (mulMatch) {
-    const val = pythonState.variables.get(mulMatch[1]) as number;
-    return val * parseInt(mulMatch[2], 10);
-  }
-
-  // Variable reference
-  if (/^\w+$/.test(expr)) {
-    if (expr === 'context') return pythonState.context;
-    return pythonState.variables.get(expr);
-  }
-
-  // llm_query call
-  const llmMatch = expr.match(/^llm_query\("([^"]+)"\)$/);
-  if (llmMatch && bridges.llm) {
-    return await bridges.llm(llmMatch[1]);
-  }
-
-  // rlm_query call
-  const rlmWithCtx = expr.match(/^rlm_query\("([^"]+)",\s*"([^"]+)"\)$/);
-  const rlmWithoutCtx = expr.match(/^rlm_query\("([^"]+)"\)$/);
-  if (bridges.rlm) {
-    if (rlmWithCtx) {
-      return await bridges.rlm(rlmWithCtx[1], rlmWithCtx[2]);
-    }
-    if (rlmWithoutCtx) {
-      return await bridges.rlm(rlmWithoutCtx[1], pythonState.context);
-    }
-  }
-
-  // chunk_text call
-  const chunkMatch = expr.match(/^chunk_text\((\w+)(?:,\s*size=(\d+))?(?:,\s*overlap=(\d+))?\)$/);
-  if (chunkMatch) {
-    const text = String(pythonState.variables.get(chunkMatch[1]) ?? '');
-    const size = chunkMatch[2] ? parseInt(chunkMatch[2], 10) : 10000;
-    const overlap = chunkMatch[3] ? parseInt(chunkMatch[3], 10) : 500;
-
-    const chunks: string[] = [];
-    let start = 0;
-    while (start < text.length) {
-      chunks.push(text.slice(start, start + size));
-      start += size - overlap;
-      if (start >= text.length) break;
-    }
-    return chunks;
-  }
-
-  // search_context call
-  const searchMatch = expr.match(/^search_context\("([^"]+)"(?:,\s*window=(\d+))?\)$/);
-  if (searchMatch) {
-    const pattern = searchMatch[1];
-    const window = searchMatch[2] ? parseInt(searchMatch[2], 10) : 200;
-    const context = pythonState.context;
-    const results: Array<{ match: string; start: number; context: string }> = [];
-
-    const regex = new RegExp(pattern, 'gi');
-    let match;
-    while ((match = regex.exec(context)) !== null) {
-      const start = Math.max(0, match.index - window);
-      const end = Math.min(context.length, match.index + match[0].length + window);
-      results.push({
-        match: match[0],
-        start: match.index,
-        context: context.slice(start, end),
-      });
-    }
-    return results;
-  }
-
-  // count_matches call
-  const countMatchesMatch = expr.match(/^count_matches\((?:r)?"([^"]+)"\)$/);
-  if (countMatchesMatch) {
-    const pattern = countMatchesMatch[1].replace(/\\\\d/g, '\\d');
-    const context = pythonState.context;
-    const regex = new RegExp(pattern, 'gi');
-    const matches = context.match(regex);
-    return matches ? matches.length : 0;
-  }
-
-  // extract_json call - handles both variable and string literal
-  const extractJsonVarMatch = expr.match(/^extract_json\((\w+)\)$/);
-  const extractJsonStrMatch = expr.match(/^extract_json\("([^"]+)"\)$/);
-  if (extractJsonVarMatch || extractJsonStrMatch) {
-    let text: string;
-    if (extractJsonStrMatch) {
-      text = extractJsonStrMatch[1];
-    } else if (extractJsonVarMatch) {
-      text = extractJsonVarMatch[1] === 'context'
-        ? pythonState.context
-        : String(pythonState.variables.get(extractJsonVarMatch[1]) ?? '');
-    } else {
-      text = '';
-    }
-    // Find JSON object or array in text
-    const jsonObjMatch = text.match(/\{[\s\S]*\}/);
-    const jsonArrMatch = text.match(/\[[\s\S]*\]/);
-    const jsonStr = jsonObjMatch?.[0] || jsonArrMatch?.[0];
-    if (jsonStr) {
-      try {
-        return JSON.parse(jsonStr);
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-
-  // "data is None" check - returns Python-style boolean string
-  const isNoneMatch = expr.match(/^(\w+) is None$/);
-  if (isNoneMatch) {
-    const val = pythonState.variables.get(isNoneMatch[1]);
-    return (val === null || val === undefined) ? 'True' : 'False';
-  }
-
-  // Dict/object access like data['key'] or data['outer']['inner']
-  const dictAccessMatch = expr.match(/^(\w+)(\[['"][\w]+['"]\])+$/);
-  if (dictAccessMatch) {
-    let obj = pythonState.variables.get(dictAccessMatch[1]) as Record<string, unknown>;
-    if (!obj) return undefined;
-
-    // Extract all keys from brackets
-    const keys = [...expr.matchAll(/\[['"](\w+)['"]\]/g)].map(m => m[1]);
-    for (const key of keys) {
-      if (obj && typeof obj === 'object' && key in obj) {
-        obj = obj[key] as Record<string, unknown>;
-      } else {
-        return undefined;
-      }
-    }
-    return obj;
-  }
-
-  // len(expr) > 0 comparison
-  const lenCompareMatch = expr.match(/^len\((\w+)(?:\[['"](\w+)['"]\])?\) > (\d+)$/);
-  if (lenCompareMatch) {
-    let val = pythonState.variables.get(lenCompareMatch[1]) as Record<string, unknown> | unknown[];
-    if (lenCompareMatch[2] && val && typeof val === 'object') {
-      val = (val as Record<string, unknown>)[lenCompareMatch[2]] as unknown[];
-    }
-    const threshold = parseInt(lenCompareMatch[3], 10);
-    if (typeof val === 'string' || Array.isArray(val)) {
-      return val.length > threshold ? 'True' : 'False';
-    }
-    return 'False';
-  }
-
-  // extract_sections call
-  const extractSectionsMatch = expr.match(/^extract_sections\(r"([^"]+)"\)$/);
-  if (extractSectionsMatch) {
-    const pattern = extractSectionsMatch[1];
-    const context = pythonState.context;
-    const regex = new RegExp(pattern, 'gm');
-    const sections: Array<{ header: string; content: string; start: number }> = [];
-
-    const matches = [...context.matchAll(regex)];
-    for (let i = 0; i < matches.length; i++) {
-      const match = matches[i];
-      const nextMatch = matches[i + 1];
-      const start = match.index!;
-      const end = nextMatch ? nextMatch.index! : context.length;
-      const header = match[0];
-      const content = context.slice(start + header.length, end).trim();
-      sections.push({ header, content, start });
-    }
-    return sections;
-  }
-
-  // find_line call
-  const findLineMatch = expr.match(/^find_line\((?:r)?"([^"]+)"\)$/);
-  if (findLineMatch) {
-    const pattern = findLineMatch[1];
-    const context = pythonState.context;
-    const lines = context.split('\n');
-    const regex = new RegExp(pattern, 'i');
-    const results: Array<[number, string]> = [];
-    for (let i = 0; i < lines.length; i++) {
-      if (regex.test(lines[i])) {
-        results.push([i + 1, lines[i]]);
-      }
-    }
-    return results;
-  }
-
-  // count_lines call (with or without pattern)
-  const countLinesPatternMatch = expr.match(/^count_lines\((?:r)?"([^"]+)"\)$/);
-  const countLinesNoArgMatch = expr.match(/^count_lines\(\)$/);
-  if (countLinesPatternMatch) {
-    const pattern = countLinesPatternMatch[1];
-    const context = pythonState.context;
-    const lines = context.split('\n');
-    const regex = new RegExp(pattern, 'i');
-    return lines.filter(line => regex.test(line)).length;
-  }
-  if (countLinesNoArgMatch) {
-    const context = pythonState.context;
-    return context.split('\n').length;
-  }
-
-  // get_line call
-  const getLineMatch = expr.match(/^get_line\((\d+)\)$/);
-  if (getLineMatch) {
-    const lineNum = parseInt(getLineMatch[1], 10);
-    const context = pythonState.context;
-    const lines = context.split('\n');
-    if (lineNum < 1 || lineNum > lines.length) {
-      return '';
-    }
-    return lines[lineNum - 1];
-  }
-
-  // quote_match call
-  const quoteMatchMatch = expr.match(/^quote_match\((?:r)?"([^"]+)"(?:,\s*max_length=(\d+))?\)$/);
-  if (quoteMatchMatch) {
-    const pattern = quoteMatchMatch[1];
-    const maxLength = quoteMatchMatch[2] ? parseInt(quoteMatchMatch[2], 10) : 100;
-    const context = pythonState.context;
-    const regex = new RegExp(pattern, 'i');
-    const match = context.match(regex);
-    if (match) {
-      const result = match[0];
-      if (result.length > maxLength) {
-        return result.slice(0, maxLength) + '...';
-      }
-      return result;
-    }
-    return null;
-  }
-
-  // chunk_by_headers call (4.3.1)
-  const chunkByHeadersMatch = expr.match(/^chunk_by_headers\((?:level=(\d+))?\)$/);
-  if (chunkByHeadersMatch) {
-    const level = chunkByHeadersMatch[1] ? parseInt(chunkByHeadersMatch[1], 10) : 2;
-    const context = pythonState.context;
-    const headerPattern = new RegExp(`^${'#'.repeat(level)} .+$`, 'gm');
-    const chunks: Array<{ header: string; content: string; start: number }> = [];
-
-    const matches = [...context.matchAll(headerPattern)];
-    for (let i = 0; i < matches.length; i++) {
-      const match = matches[i];
-      const nextMatch = matches[i + 1];
-      const start = match.index!;
-      const end = nextMatch ? nextMatch.index! : context.length;
-      const header = match[0];
-      const content = context.slice(start + header.length, end).trim();
-      chunks.push({ header, content, start });
-    }
-    return chunks;
-  }
-
-  // chunk_by_size call (4.3.2)
-  const chunkBySizeMatch = expr.match(/^chunk_by_size\((?:chars=(\d+))?(?:,?\s*overlap=(\d+))?\)$/);
-  if (chunkBySizeMatch) {
-    const chars = chunkBySizeMatch[1] ? parseInt(chunkBySizeMatch[1], 10) : 50000;
-    const overlap = chunkBySizeMatch[2] ? parseInt(chunkBySizeMatch[2], 10) : 0;
-    const context = pythonState.context;
-    const chunks: string[] = [];
-    let start = 0;
-    while (start < context.length) {
-      const end = Math.min(start + chars, context.length);
-      chunks.push(context.slice(start, end));
-      if (end >= context.length) break;
-      start = end - overlap;
-    }
-    return chunks;
-  }
-
-  // Array access like chunks[0], results[0]['match'], matches[0][0], matches[0][1]
-  // Handle tuple indexing: matches[0][0] for first element of tuple at index 0
-  const tupleAccess = expr.match(/^(\w+)\[(\d+)\]\[(\d+)\]$/);
-  if (tupleAccess) {
-    const arr = pythonState.variables.get(tupleAccess[1]) as unknown[];
-    if (!arr) return undefined;
-    const tuple = arr[parseInt(tupleAccess[2], 10)] as unknown[];
-    if (!tuple) return undefined;
-    return tuple[parseInt(tupleAccess[3], 10)];
-  }
-
-  // Array access with negative slice: chunks[0][-5:]
-  const negativeSliceAccess = expr.match(/^(\w+)\[(\d+)\]\[(-?\d+):\]$/);
-  if (negativeSliceAccess) {
-    const arr = pythonState.variables.get(negativeSliceAccess[1]) as unknown[];
-    if (!arr) return undefined;
-    const elem = arr[parseInt(negativeSliceAccess[2], 10)];
-    if (typeof elem === 'string') {
-      const sliceStart = parseInt(negativeSliceAccess[3], 10);
-      return elem.slice(sliceStart);
-    }
-    return undefined;
-  }
-
-  // Array access like chunks[0], results[0]['match']
-  const arrayAccess = expr.match(/^(\w+)\[(\d+)\](?:\['(\w+)'\])?(?:\[:(\d+)\])?$/);
-  if (arrayAccess) {
-    const arr = pythonState.variables.get(arrayAccess[1]) as unknown[];
-    if (!arr) return undefined;
-    const elem = arr[parseInt(arrayAccess[2], 10)];
-    if (arrayAccess[3] && typeof elem === 'object' && elem !== null) {
-      return (elem as Record<string, unknown>)[arrayAccess[3]];
-    }
-    if (arrayAccess[4] && typeof elem === 'string') {
-      return elem.slice(0, parseInt(arrayAccess[4], 10));
-    }
-    return elem;
-  }
-
-  // 'content' in results[0] - returns Python-style boolean
-  if (expr.includes(" in ")) {
-    const inMatch = expr.match(/'(\w+)' in (\w+)\[(\d+)\]/);
-    if (inMatch) {
-      const arr = pythonState.variables.get(inMatch[2]) as unknown[];
-      if (arr && arr[parseInt(inMatch[3], 10)]) {
-        const elem = arr[parseInt(inMatch[3], 10)] as Record<string, unknown>;
-        return (inMatch[1] in elem) ? 'True' : 'False';
-      }
-    }
-    return 'False';
-  }
-
-  return expr;
-}
 
 // Mock the pyodide module
 vi.mock('pyodide', () => ({
@@ -576,7 +25,6 @@ vi.mock('./pyodide.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./pyodide.js')>();
   return {
     ...actual,
-    // Force direct mode by always returning false for worker detection
     detectWorkerSupport: vi.fn().mockReturnValue(false),
   };
 });
@@ -584,23 +32,21 @@ vi.mock('./pyodide.js', async (importOriginal) => {
 import { createSandbox } from './sandbox.js';
 import { detectWorkerSupport } from './pyodide.js';
 
+// Helper to run tests with temporary sandbox
+const runWithSandbox = (
+  context: string,
+  testFn: (sandbox: Sandbox) => Promise<void>,
+  config?: REPLConfig,
+) => withSandbox(createSandbox, context, testFn, config ?? DEFAULT_CONFIG);
+
 describe('Sandbox', () => {
-  const defaultConfig: REPLConfig = {
-    timeout: 5000,
-    maxOutputLength: 1000,
-  };
-
-  const defaultBridges: SandboxBridges = {
-    onLLMQuery: vi.fn().mockResolvedValue('LLM response'),
-    onRLMQuery: vi.fn().mockResolvedValue('RLM response'),
-  };
-
+  const defaultBridges = createMockBridges();
   let sandbox: Sandbox;
 
   beforeEach(() => {
     vi.clearAllMocks();
     resetPythonState();
-    sandbox = createSandbox(defaultConfig, defaultBridges);
+    sandbox = createSandbox(DEFAULT_CONFIG, defaultBridges);
   });
 
   afterEach(async () => {
@@ -731,83 +177,56 @@ sys.stderr.write("error message")
   });
 
   describe('Timeout Handling', () => {
-    describe('Timeout exceeded', () => {
-      it('should terminate execution with timeout error when exceeding config.timeout', async () => {
-        const shortTimeoutConfig: REPLConfig = {
-          timeout: 100,
-          maxOutputLength: 1000,
-        };
-        const shortTimeoutSandbox = createSandbox(shortTimeoutConfig, defaultBridges);
-        await shortTimeoutSandbox.initialize('test');
+    it('should terminate execution with timeout error when exceeding config.timeout', async () => {
+      const shortTimeoutConfig: REPLConfig = { timeout: 100, maxOutputLength: 1000 };
+      const shortTimeoutSandbox = createSandbox(shortTimeoutConfig, defaultBridges);
+      await shortTimeoutSandbox.initialize('test');
 
-        const result = await shortTimeoutSandbox.execute(`
+      const result = await shortTimeoutSandbox.execute(`
 import time
 time.sleep(1)
 print("done")
 `);
 
-        expect(result.error).toBeDefined();
-        expect(result.error).toContain('timeout');
+      expect(result.error).toBeDefined();
+      expect(result.error).toContain('timeout');
 
-        await shortTimeoutSandbox.destroy();
-      });
+      await shortTimeoutSandbox.destroy();
     });
 
-    describe('Timeout configurable', () => {
-      it('should use REPLConfig.timeout value as the timeout in milliseconds', async () => {
-        const customTimeoutConfig: REPLConfig = {
-          timeout: 2000,
-          maxOutputLength: 1000,
-        };
-        const customSandbox = createSandbox(customTimeoutConfig, defaultBridges);
-        await customSandbox.initialize('test');
+    it('should use REPLConfig.timeout value as the timeout in milliseconds', async () => {
+      const customTimeoutConfig: REPLConfig = { timeout: 2000, maxOutputLength: 1000 };
+      const customSandbox = createSandbox(customTimeoutConfig, defaultBridges);
+      await customSandbox.initialize('test');
 
-        const result = await customSandbox.execute('print("fast")');
+      const result = await customSandbox.execute('print("fast")');
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('fast');
+      expect(result.error).toBeUndefined();
+      expect(result.stdout).toContain('fast');
 
-        await customSandbox.destroy();
-      });
+      await customSandbox.destroy();
     });
   });
 
   describe('Output Truncation', () => {
-    describe('Output within limit', () => {
-      it('should return full output when stdout length <= maxOutputLength', async () => {
-        const config: REPLConfig = {
-          timeout: 5000,
-          maxOutputLength: 1000,
-        };
-        const truncSandbox = createSandbox(config, defaultBridges);
-        await truncSandbox.initialize('test');
-
-        const result = await truncSandbox.execute('print("short output")');
+    it('should return full output when stdout length <= maxOutputLength', async () => {
+      await runWithSandbox('test', async (sb) => {
+        const result = await sb.execute('print("short output")');
 
         expect(result.stdout).toBe('short output\n');
         expect(result.stdout).not.toContain('truncated');
-
-        await truncSandbox.destroy();
       });
     });
 
-    describe('Output exceeds limit', () => {
-      it('should truncate output with omission notice when stdout > maxOutputLength', async () => {
-        const config: REPLConfig = {
-          timeout: 5000,
-          maxOutputLength: 50,
-        };
-        const truncSandbox = createSandbox(config, defaultBridges);
-        await truncSandbox.initialize('test');
-
-        const result = await truncSandbox.execute('print("x" * 200)');
+    it('should truncate output with omission notice when stdout > maxOutputLength', async () => {
+      const config: REPLConfig = { timeout: 5000, maxOutputLength: 50 };
+      await runWithSandbox('test', async (sb) => {
+        const result = await sb.execute('print("x" * 200)');
 
         expect(result.stdout.length).toBeLessThan(200);
         expect(result.stdout).toContain('truncated');
         expect(result.stdout).toContain('omitted');
-
-        await truncSandbox.destroy();
-      });
+      }, config);
     });
   });
 
@@ -816,80 +235,76 @@ print("done")
       await sandbox.initialize('bridge test context');
     });
 
-    describe('llm_query function', () => {
-      it('should invoke onLLMQuery callback and return the response', async () => {
-        const mockLLMQuery = vi.fn().mockResolvedValue('mocked LLM answer');
-        const bridgeSandbox = createSandbox(defaultConfig, {
-          ...defaultBridges,
-          onLLMQuery: mockLLMQuery,
-        });
-        await bridgeSandbox.initialize('test');
+    it('should invoke onLLMQuery callback and return the response', async () => {
+      const mockLLMQuery = vi.fn().mockResolvedValue('mocked LLM answer');
+      const bridgeSandbox = createSandbox(DEFAULT_CONFIG, {
+        ...defaultBridges,
+        onLLMQuery: mockLLMQuery,
+      });
+      await bridgeSandbox.initialize('test');
 
-        const result = await bridgeSandbox.execute(`
+      const result = await bridgeSandbox.execute(`
 response = llm_query("What is 2+2?")
 print(response)
 `);
 
-        expect(mockLLMQuery).toHaveBeenCalledWith('What is 2+2?');
-        expect(result.stdout).toContain('mocked LLM answer');
+      expect(mockLLMQuery).toHaveBeenCalledWith('What is 2+2?');
+      expect(result.stdout).toContain('mocked LLM answer');
 
-        await bridgeSandbox.destroy();
-      });
+      await bridgeSandbox.destroy();
     });
 
-    describe('rlm_query function', () => {
-      it('should invoke onRLMQuery callback and return the response', async () => {
-        const mockRLMQuery = vi.fn().mockResolvedValue('mocked RLM answer');
-        const bridgeSandbox = createSandbox(defaultConfig, {
-          ...defaultBridges,
-          onRLMQuery: mockRLMQuery,
-        });
-        await bridgeSandbox.initialize('test context here');
+    it('should invoke onRLMQuery callback and return the response', async () => {
+      const mockRLMQuery = vi.fn().mockResolvedValue('mocked RLM answer');
+      const bridgeSandbox = createSandbox(DEFAULT_CONFIG, {
+        ...defaultBridges,
+        onRLMQuery: mockRLMQuery,
+      });
+      await bridgeSandbox.initialize('test context here');
 
-        const result = await bridgeSandbox.execute(`
+      const result = await bridgeSandbox.execute(`
 response = rlm_query("Analyze this data")
 print(response)
 `);
 
-        expect(mockRLMQuery).toHaveBeenCalled();
-        expect(result.stdout).toContain('mocked RLM answer');
+      expect(mockRLMQuery).toHaveBeenCalled();
+      expect(result.stdout).toContain('mocked RLM answer');
 
-        await bridgeSandbox.destroy();
+      await bridgeSandbox.destroy();
+    });
+
+    it('should use current context when ctx argument is not provided', async () => {
+      const mockRLMQuery = vi.fn().mockResolvedValue('answer');
+      const bridgeSandbox = createSandbox(DEFAULT_CONFIG, {
+        ...defaultBridges,
+        onRLMQuery: mockRLMQuery,
       });
+      await bridgeSandbox.initialize('original context');
 
-      it('should use current context when ctx argument is not provided', async () => {
-        const mockRLMQuery = vi.fn().mockResolvedValue('answer');
-        const bridgeSandbox = createSandbox(defaultConfig, {
-          ...defaultBridges,
-          onRLMQuery: mockRLMQuery,
-        });
-        await bridgeSandbox.initialize('original context');
-
-        await bridgeSandbox.execute(`
+      await bridgeSandbox.execute(`
 rlm_query("task without context")
 `);
 
-        expect(mockRLMQuery).toHaveBeenCalledWith('task without context', 'original context');
+      expect(mockRLMQuery).toHaveBeenCalledWith('task without context', 'original context');
 
-        await bridgeSandbox.destroy();
+      await bridgeSandbox.destroy();
+    });
+
+    it('should use provided ctx when specified', async () => {
+      const mockRLMQuery = vi.fn().mockResolvedValue('answer');
+      const bridgeSandbox = createSandbox(DEFAULT_CONFIG, {
+        ...defaultBridges,
+        onRLMQuery: mockRLMQuery,
       });
+      await bridgeSandbox.initialize('original context');
 
-      it('should use provided ctx when specified', async () => {
-        const mockRLMQuery = vi.fn().mockResolvedValue('answer');
-        const bridgeSandbox = createSandbox(defaultConfig, {
-          ...defaultBridges,
-          onRLMQuery: mockRLMQuery,
-        });
-        await bridgeSandbox.initialize('original context');
-
-        await bridgeSandbox.execute(`
+      await bridgeSandbox.execute(`
 rlm_query("task with custom context", "custom context data")
 `);
 
-        expect(mockRLMQuery).toHaveBeenCalledWith('task with custom context', 'custom context data');
+      expect(mockRLMQuery).toHaveBeenCalledWith('task with custom context', 'custom context data');
 
-        await bridgeSandbox.destroy();
-      });
+      await bridgeSandbox.destroy();
     });
   });
 
@@ -900,18 +315,15 @@ rlm_query("task with custom context", "custom context data")
 
     describe('count_matches function', () => {
       it('should return count of regex matches without full results', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize('The cat sat on the mat. The cat was fat.');
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('The cat sat on the mat. The cat was fat.', async (sb) => {
+          const result = await sb.execute(`
 count = count_matches("cat")
 print(count)
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout.trim()).toBe('2');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout.trim()).toBe('2');
+        });
       });
 
       it('should return 0 when no matches', async () => {
@@ -925,54 +337,45 @@ print(count)
       });
 
       it('should support regex patterns', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize('test123 test456 test789');
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('test123 test456 test789', async (sb) => {
+          const result = await sb.execute(`
 count = count_matches(r"test\\d+")
 print(count)
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout.trim()).toBe('3');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout.trim()).toBe('3');
+        });
       });
     });
 
     describe('extract_json function', () => {
       it('should extract JSON object from text', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize('Some text {"key": "value", "num": 42} more text');
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('Some text {"key": "value", "num": 42} more text', async (sb) => {
+          const result = await sb.execute(`
 data = extract_json(context)
 print(data['key'])
 print(data['num'])
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('value');
-        expect(result.stdout).toContain('42');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toContain('value');
+          expect(result.stdout).toContain('42');
+        });
       });
 
       it('should extract JSON array from text', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize('Data: [1, 2, 3] end');
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('Data: [1, 2, 3] end', async (sb) => {
+          const result = await sb.execute(`
 data = extract_json(context)
 print(len(data))
 print(data[0])
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('3');
-        expect(result.stdout).toContain('1');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toContain('3');
+          expect(result.stdout).toContain('1');
+        });
       });
 
       it('should return None when no valid JSON found', async () => {
@@ -986,66 +389,61 @@ print(data is None)
       });
 
       it('should handle nested JSON', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize('{"outer": {"inner": "nested"}}');
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('{"outer": {"inner": "nested"}}', async (sb) => {
+          const result = await sb.execute(`
 data = extract_json(context)
 print(data['outer']['inner'])
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('nested');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toContain('nested');
+        });
       });
     });
 
     describe('extract_sections function', () => {
       it('should extract sections by header pattern', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize(`# Section 1
+        const context = `# Section 1
 Content for section 1.
 
 # Section 2
 Content for section 2.
 
 # Section 3
-Content for section 3.`);
+Content for section 3.`;
 
-        const result = await testSandbox.execute(`
+        await runWithSandbox(context, async (sb) => {
+          const result = await sb.execute(`
 sections = extract_sections(r"^# .+$")
 print(len(sections))
 print(sections[0]['header'])
 print(sections[1]['header'])
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('3');
-        expect(result.stdout).toContain('# Section 1');
-        expect(result.stdout).toContain('# Section 2');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toContain('3');
+          expect(result.stdout).toContain('# Section 1');
+          expect(result.stdout).toContain('# Section 2');
+        });
       });
 
       it('should include section content', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize(`## Intro
+        const context = `## Intro
 This is the intro.
 
 ## Body
-This is the body.`);
+This is the body.`;
 
-        const result = await testSandbox.execute(`
+        await runWithSandbox(context, async (sb) => {
+          const result = await sb.execute(`
 sections = extract_sections(r"^## .+$")
 print('content' in sections[0])
 print(len(sections[0]['content']) > 0)
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('True');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toContain('True');
+        });
       });
 
       it('should return empty list when no sections found', async () => {
@@ -1089,22 +487,19 @@ print(len(chunks))
 
     describe('search_context function', () => {
       it('should return matches with surrounding context', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize('The quick brown fox jumps over the lazy dog');
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('The quick brown fox jumps over the lazy dog', async (sb) => {
+          const result = await sb.execute(`
 results = search_context("fox", window=10)
 print(len(results))
 print(results[0]['match'])
 print('context' in results[0])
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('1');
-        expect(result.stdout).toContain('fox');
-        expect(result.stdout).toContain('True');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toContain('1');
+          expect(result.stdout).toContain('fox');
+          expect(result.stdout).toContain('True');
+        });
       });
 
       it('should return empty list when no matches', async () => {
@@ -1120,41 +515,39 @@ print(len(results))
 
     describe('find_line function', () => {
       it('should return line numbers and content for matching lines', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize(`line one
+        const context = `line one
 line two with target
 line three
-another target line`);
+another target line`;
 
-        const result = await testSandbox.execute(`
+        await runWithSandbox(context, async (sb) => {
+          const result = await sb.execute(`
 matches = find_line("target")
 print(len(matches))
 print(matches[0][0])
 print(matches[0][1])
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('2'); // 2 matches
-        expect(result.stdout).toContain('line two with target');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toContain('2');
+          expect(result.stdout).toContain('line two with target');
+        });
       });
 
       it('should return 1-indexed line numbers', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize(`first line
+        const context = `first line
 second line
-third line`);
+third line`;
 
-        const result = await testSandbox.execute(`
+        await runWithSandbox(context, async (sb) => {
+          const result = await sb.execute(`
 matches = find_line("first")
 print(matches[0][0])
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout.trim()).toBe('1');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout.trim()).toBe('1');
+        });
       });
 
       it('should return empty list when no matches', async () => {
@@ -1168,61 +561,58 @@ print(len(matches))
       });
 
       it('should support regex patterns', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize(`def foo():
+        const context = `def foo():
     pass
 def bar():
-    return 1`);
+    return 1`;
 
-        const result = await testSandbox.execute(`
+        await runWithSandbox(context, async (sb) => {
+          const result = await sb.execute(`
 matches = find_line(r"def \\w+")
 print(len(matches))
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout.trim()).toBe('2');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout.trim()).toBe('2');
+        });
       });
     });
 
     describe('count_lines function', () => {
       it('should return total line count when no pattern', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize(`line 1
+        const context = `line 1
 line 2
 line 3
 line 4
-line 5`);
+line 5`;
 
-        const result = await testSandbox.execute(`
+        await runWithSandbox(context, async (sb) => {
+          const result = await sb.execute(`
 count = count_lines()
 print(count)
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout.trim()).toBe('5');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout.trim()).toBe('5');
+        });
       });
 
       it('should return count of matching lines when pattern given', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize(`import os
+        const context = `import os
 import sys
 def main():
     pass
-import json`);
+import json`;
 
-        const result = await testSandbox.execute(`
+        await runWithSandbox(context, async (sb) => {
+          const result = await sb.execute(`
 count = count_lines("import")
 print(count)
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout.trim()).toBe('3');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout.trim()).toBe('3');
+        });
       });
 
       it('should return 0 when pattern matches nothing', async () => {
@@ -1238,69 +628,57 @@ print(count)
 
     describe('get_line function', () => {
       it('should return content of specific line (1-indexed)', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize(`first line
+        const context = `first line
 second line
-third line`);
+third line`;
 
-        const result = await testSandbox.execute(`
+        await runWithSandbox(context, async (sb) => {
+          const result = await sb.execute(`
 line = get_line(2)
 print(line)
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout.trim()).toBe('second line');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout.trim()).toBe('second line');
+        });
       });
 
       it('should return empty string for out-of-bounds line number', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize(`only one line`);
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('only one line', async (sb) => {
+          const result = await sb.execute(`
 line = get_line(999)
 print(repr(line))
 `);
 
-        expect(result.error).toBeUndefined();
-        // Mock returns JSON-style "", Python would return ''
-        expect(result.stdout).toMatch(/['"]{2}/);
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toMatch(/['"]{2}/);
+        });
       });
 
       it('should return empty string for line 0', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize(`some content`);
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('some content', async (sb) => {
+          const result = await sb.execute(`
 line = get_line(0)
 print(repr(line))
 `);
 
-        expect(result.error).toBeUndefined();
-        // Mock returns JSON-style "", Python would return ''
-        expect(result.stdout).toMatch(/['"]{2}/);
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toMatch(/['"]{2}/);
+        });
       });
     });
 
     describe('quote_match function', () => {
       it('should return first match of pattern', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize('The value is max_tokens: 8192, other stuff');
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('The value is max_tokens: 8192, other stuff', async (sb) => {
+          const result = await sb.execute(`
 match = quote_match("max_tokens: \\d+")
 print(match)
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout.trim()).toBe('max_tokens: 8192');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout.trim()).toBe('max_tokens: 8192');
+        });
       });
 
       it('should return None when no match', async () => {
@@ -1314,26 +692,22 @@ print(match is None)
       });
 
       it('should truncate long matches with max_length', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize('This is a very long string that should be truncated when matched');
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('This is a very long string that should be truncated when matched', async (sb) => {
+          const result = await sb.execute(`
 match = quote_match("This is a very long string", max_length=15)
 print(match)
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('...');
-        expect(result.stdout.trim().length).toBeLessThan(25);
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toContain('...');
+          expect(result.stdout.trim().length).toBeLessThan(25);
+        });
       });
     });
 
     describe('chunk_by_headers function (4.3.1)', () => {
       it('should chunk context by markdown headers at default level 2', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize(`# Main Title
+        const context = `# Main Title
 Intro content.
 
 ## Section 1
@@ -1343,150 +717,132 @@ Content for section 1.
 Content for section 2.
 
 ### Subsection
-Not at level 2.`);
+Not at level 2.`;
 
-        const result = await testSandbox.execute(`
+        await runWithSandbox(context, async (sb) => {
+          const result = await sb.execute(`
 chunks = chunk_by_headers()
 print(len(chunks))
 print(chunks[0]['header'])
 print(chunks[1]['header'])
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('2'); // Two ## headers
-        expect(result.stdout).toContain('## Section 1');
-        expect(result.stdout).toContain('## Section 2');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toContain('2');
+          expect(result.stdout).toContain('## Section 1');
+          expect(result.stdout).toContain('## Section 2');
+        });
       });
 
       it('should chunk at specified header level', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize(`# H1 First
+        const context = `# H1 First
 Content 1.
 
 # H1 Second
 Content 2.
 
 ## H2 Sub
-Sub content.`);
+Sub content.`;
 
-        const result = await testSandbox.execute(`
+        await runWithSandbox(context, async (sb) => {
+          const result = await sb.execute(`
 chunks = chunk_by_headers(level=1)
 print(len(chunks))
 print(chunks[0]['header'])
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('2'); // Two # headers
-        expect(result.stdout).toContain('# H1 First');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toContain('2');
+          expect(result.stdout).toContain('# H1 First');
+        });
       });
 
       it('should return empty list when no headers at level', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize('Plain text with no headers.');
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('Plain text with no headers.', async (sb) => {
+          const result = await sb.execute(`
 chunks = chunk_by_headers()
 print(len(chunks))
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout.trim()).toBe('0');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout.trim()).toBe('0');
+        });
       });
 
       it('should include content between headers', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize(`## First
+        const context = `## First
 First content here.
 
 ## Second
-Second content here.`);
+Second content here.`;
 
-        const result = await testSandbox.execute(`
+        await runWithSandbox(context, async (sb) => {
+          const result = await sb.execute(`
 chunks = chunk_by_headers()
 print('content' in chunks[0])
 print(len(chunks[0]['content']) > 0)
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('True');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toContain('True');
+        });
       });
     });
 
     describe('chunk_by_size function (4.3.2)', () => {
       it('should chunk context by character count', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize('A'.repeat(100));
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('A'.repeat(100), async (sb) => {
+          const result = await sb.execute(`
 chunks = chunk_by_size(chars=30)
 print(len(chunks))
 print(len(chunks[0]))
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('4'); // 100/30 = ~4 chunks
-        expect(result.stdout).toContain('30');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toContain('4');
+          expect(result.stdout).toContain('30');
+        });
       });
 
       it('should support overlap parameter', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize('0123456789' + '0123456789' + '0123456789');
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('0123456789' + '0123456789' + '0123456789', async (sb) => {
+          const result = await sb.execute(`
 chunks = chunk_by_size(chars=15, overlap=5)
 print(len(chunks))
 print(chunks[0][-5:])
 print(chunks[1][:5])
 `);
 
-        expect(result.error).toBeUndefined();
-        // With overlap, consecutive chunks should share characters
-        const lines = result.stdout.trim().split('\n');
-        expect(lines[1]).toBe(lines[2]); // Last 5 of chunk[0] == first 5 of chunk[1]
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          const lines = result.stdout.trim().split('\n');
+          expect(lines[1]).toBe(lines[2]);
+        });
       });
 
       it('should use default parameters when not specified', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize('Short context');
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('Short context', async (sb) => {
+          const result = await sb.execute(`
 chunks = chunk_by_size()
 print(len(chunks))
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('1'); // Short text = 1 chunk
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toContain('1');
+        });
       });
 
       it('should return single chunk when context smaller than chars', async () => {
-        const testSandbox = createSandbox(defaultConfig, defaultBridges);
-        await testSandbox.initialize('Small text');
-
-        const result = await testSandbox.execute(`
+        await runWithSandbox('Small text', async (sb) => {
+          const result = await sb.execute(`
 chunks = chunk_by_size(chars=1000)
 print(len(chunks))
 print(chunks[0])
 `);
 
-        expect(result.error).toBeUndefined();
-        expect(result.stdout).toContain('1');
-        expect(result.stdout).toContain('Small text');
-
-        await testSandbox.destroy();
+          expect(result.error).toBeUndefined();
+          expect(result.stdout).toContain('1');
+          expect(result.stdout).toContain('Small text');
+        });
       });
     });
   });
@@ -1535,7 +891,7 @@ my_dict = {"key": "value", "num": 123}
 
   describe('Edge Cases', () => {
     it('should handle execution without initialization', async () => {
-      const freshSandbox = createSandbox(defaultConfig, defaultBridges);
+      const freshSandbox = createSandbox(DEFAULT_CONFIG, defaultBridges);
 
       await expect(freshSandbox.execute('print(1)')).rejects.toThrow('not initialized');
     });
@@ -1565,14 +921,12 @@ my_dict = {"key": "value", "num": 123}
     it('should have cancel method available', async () => {
       await sandbox.initialize('test');
 
-      // cancel() should be callable without error
       await expect(sandbox.cancel()).resolves.toBeUndefined();
     });
 
     it('should be safe to call cancel when not executing', async () => {
       await sandbox.initialize('test');
 
-      // Should not throw even if nothing is running
       await sandbox.cancel();
       await sandbox.cancel();
     });
@@ -1580,15 +934,13 @@ my_dict = {"key": "value", "num": 123}
 
   describe('Configuration Options', () => {
     it('should accept indexURL from allowed domain', async () => {
-      // Use an allowed domain (cdn.jsdelivr.net)
       const configWithUrl: REPLConfig = {
-        ...defaultConfig,
+        ...DEFAULT_CONFIG,
         indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.0/full/',
       };
       const customSandbox = createSandbox(configWithUrl, defaultBridges);
       await customSandbox.initialize('test');
 
-      // Should initialize without error
       const result = await customSandbox.execute('print("ok")');
       expect(result.error).toBeUndefined();
 
@@ -1597,12 +949,11 @@ my_dict = {"key": "value", "num": 123}
 
     it('should reject indexURL from untrusted domain', async () => {
       const configWithUrl: REPLConfig = {
-        ...defaultConfig,
+        ...DEFAULT_CONFIG,
         indexURL: 'https://custom.cdn.com/pyodide/',
       };
       const customSandbox = createSandbox(configWithUrl, defaultBridges);
 
-      // Should throw an error for untrusted domain
       await expect(customSandbox.initialize('test')).rejects.toThrow(
         'Untrusted Pyodide URL domain: custom.cdn.com'
       );
@@ -1610,12 +961,11 @@ my_dict = {"key": "value", "num": 123}
 
     it('should reject indexURL array with untrusted domain', async () => {
       const configWithUrls: REPLConfig = {
-        ...defaultConfig,
+        ...DEFAULT_CONFIG,
         indexURL: ['https://cdn1.com/pyodide/', 'https://cdn2.com/pyodide/'],
       };
       const customSandbox = createSandbox(configWithUrls, defaultBridges);
 
-      // Should throw an error for untrusted domain (uses first URL)
       await expect(customSandbox.initialize('test')).rejects.toThrow(
         'Untrusted Pyodide URL domain: cdn1.com'
       );
@@ -1623,7 +973,7 @@ my_dict = {"key": "value", "num": 123}
 
     it('should respect useWorker=false to force direct mode', async () => {
       const configNoWorker: REPLConfig = {
-        ...defaultConfig,
+        ...DEFAULT_CONFIG,
         useWorker: false,
       };
       const directSandbox = createSandbox(configNoWorker, defaultBridges);
