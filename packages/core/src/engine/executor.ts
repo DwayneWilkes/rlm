@@ -21,10 +21,11 @@ import type {
 } from '../types.js';
 import { DEFAULT_BUDGET, DEFAULT_REPL_CONFIG } from '../types.js';
 import { loadContext, escapeForPython, type LoadedContext } from '../context/loader.js';
-import { createSandbox, type Sandbox } from '../repl/sandbox.js';
+import { createSandbox, type Sandbox, type BatchRLMTask } from '../repl/sandbox.js';
 import { LLMRouter } from '../llm/router.js';
 import { BudgetController } from '../budget/controller.js';
 import { parseResponse } from './parser.js';
+import { getModelPromptHints } from '../llm/adapters/anthropic.js';
 
 /**
  * Executes RLM tasks with iterative LLM interaction and Python sandbox.
@@ -129,7 +130,7 @@ export class Executor {
         });
         return response.content;
       },
-      onRLMQuery: async (task, ctx) => {
+      onRLMQuery: async (task: string, ctx?: string) => {
         if (!budget.canProceed('subcall', this.depth + 1)) {
           return (
             `[Cannot spawn sub-RLM: ${budget.getBlockReason()}. Answering directly.]\n` +
@@ -165,10 +166,78 @@ export class Executor {
 
         return subResult.output;
       },
+      onBatchRLMQuery: async (tasks: BatchRLMTask[]) => {
+        // Check if batch would exceed budget before spawning any
+        if (tasks.length === 0) {
+          return [];
+        }
+
+        // Respect configured batch concurrency (default 5)
+        const concurrency = budget.getBatchConcurrency();
+        const results: string[] = new Array(tasks.length);
+        const queue = tasks.map((t: BatchRLMTask, i: number) => ({ ...t, index: i }));
+
+        // Process queue with limited concurrency
+        const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
+          while (queue.length > 0) {
+            const item = queue.shift();
+            if (!item) break;
+
+            try {
+              if (!budget.canProceed('subcall', this.depth + 1)) {
+                results[item.index] =
+                  `[Cannot spawn sub-RLM: ${budget.getBlockReason()}. Answering directly.]\n` +
+                  (await this.directAnswer(item.task, item.context ?? options.context));
+                continue;
+              }
+
+              options.hooks?.onSubcall?.({ depth: this.depth + 1, task: item.task });
+              budget.record({ subcall: true, depth: this.depth + 1 });
+
+              const subExecutor = new Executor(
+                {
+                  ...this.config,
+                  defaultBudget: budget.getSubBudget(this.depth),
+                },
+                this.router,
+                this.depth + 1,
+                executionId
+              );
+
+              const subResult = await subExecutor.execute({
+                task: item.task,
+                context: item.context ?? options.context,
+                hooks: options.hooks,
+              });
+
+              trace.subcalls.push(subResult.trace);
+              budget.record({
+                cost: subResult.usage.cost,
+                inputTokens: subResult.usage.inputTokens,
+                outputTokens: subResult.usage.outputTokens,
+              });
+
+              // Handle sub-executor failures gracefully
+              if (subResult.success) {
+                results[item.index] = subResult.output;
+              } else {
+                const errorMsg = subResult.error?.message ?? 'Unknown error';
+                results[item.index] = `[Error: ${errorMsg}]`;
+              }
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              results[item.index] = `[Error: ${errorMessage}]`;
+            }
+          }
+        });
+
+        await Promise.all(workers);
+        return results;
+      },
     };
 
-    // Use injected sandboxFactory if provided, otherwise fall back to default
-    // TODO: Remove fallback in v1.0 - see design.md for rationale
+    // Use injected sandboxFactory if provided, otherwise use default Pyodide sandbox.
+    // CLI injects native/daemon backends; core users get Pyodide fallback.
     const sandbox = this.config.sandboxFactory
       ? this.config.sandboxFactory(replConfig, bridges)
       : createSandbox(replConfig, bridges);
@@ -305,6 +374,8 @@ ENVIRONMENT:
 - \`context\`: String variable with your input (${context.length.toLocaleString()} chars, ${context.contentType})
 - \`llm_query(prompt)\`: Query an LLM for simple tasks
 - \`rlm_query(task, ctx?)\`: Spawn a sub-RLM for complex sub-tasks (PREFERRED for multi-step reasoning)
+- \`batch_llm_query(prompts)\`: Execute multiple LLM queries in parallel, returns list of responses
+- \`batch_rlm_query(tasks)\`: Execute multiple sub-RLMs concurrently, tasks=[{"task": str, "context"?: str}, ...]
 - \`chunk_text(text, size, overlap)\`: Split text into chunks
 - \`search_context(pattern, window)\`: Regex search with context
 - \`count_matches(pattern)\`: Fast count of regex matches
@@ -314,6 +385,8 @@ ENVIRONMENT:
 - \`count_lines(pattern?)\`: Count total lines, or lines matching pattern
 - \`get_line(n)\`: Get content of line n (1-indexed)
 - \`quote_match(pattern)\`: Return first match of pattern in context
+- \`chunk_by_headers(level=2)\`: Split context by Markdown headers (# for 1, ## for 2, etc.)
+- \`chunk_by_size(chars=50000, overlap=0)\`: Split context into fixed-size chunks
 
 ACCURACY (CRITICAL):
 - Check the content of the 'context' variable to avoid hallucinations
@@ -356,7 +429,19 @@ STRATEGY:
    # Output: [(87, "  async def complete(request):")]
    # Then cite: "The method complete() on line 87"
 
-TERMINATION (use when ready):
+BATCHING: When you need to analyze multiple chunks independently:
+- Use batch_rlm_query() instead of sequential rlm_query() calls
+- Aim for ~200k chars per sub-call for optimal cost/quality
+- Example: batch_rlm_query([{"task": "Summarize section 1", "context": chunk1}, ...])
+
+CHUNKING: Choose the right chunking strategy for your context:
+- \`chunk_by_headers(level=2)\`: Best for structured docs with headers (README, specs, docs)
+  Example: chunks = chunk_by_headers(2); batch_rlm_query([{"task": f"Summarize", "context": c['content']} for c in chunks])
+- \`chunk_by_size(chars, overlap)\`: Best for unstructured text or code
+  Example: chunks = chunk_by_size(100000, 500); [rlm_query("Analyze", ctx=c) for c in chunks]
+- Combine with batch_rlm_query() for parallel processing of chunks
+
+${this.buildModelHintsSection()}TERMINATION (use when ready):
 - FINAL(your answer here) - Direct answer
 - FINAL_VAR(variable_name) - Return variable contents`;
 
@@ -383,6 +468,32 @@ EFFICIENCY GUIDELINES:
     }
 
     return basePrompt;
+  }
+
+  /**
+   * Build the MODEL HINTS section for the system prompt.
+   * Combines hints from config (profile-level overrides) and model capabilities.
+   *
+   * Config hints take precedence over model capability hints.
+   */
+  private buildModelHintsSection(): string {
+    // Config hints take precedence (profile-level overrides)
+    const configHints = this.config.promptHints;
+    // Fall back to model capability hints
+    const modelHints = getModelPromptHints(this.config.model);
+
+    // Use config hints if provided, otherwise model hints
+    const hints = configHints && configHints.length > 0 ? configHints : modelHints;
+
+    if (hints.length === 0) {
+      return '';
+    }
+
+    const hintsText = hints.map((hint) => `- ${hint}`).join('\n');
+    return `MODEL HINTS (for ${this.config.model}):
+${hintsText}
+
+`;
   }
 
   /**

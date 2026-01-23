@@ -67,6 +67,73 @@ def rlm_query(task: str, ctx: str = None) -> str:
             return future.result()
     return asyncio.run(__rlm_query_bridge__(task, context_to_use))
 
+def batch_llm_query(prompts: list) -> list:
+    """
+    Query an LLM with multiple prompts in parallel.
+
+    This is more efficient than calling llm_query() multiple times
+    as all prompts are sent to the host at once and processed in parallel.
+
+    Args:
+        prompts: List of prompts to send to the LLM
+
+    Returns:
+        List of LLM responses in the same order as prompts
+    """
+    if not prompts:
+        return []
+    import asyncio
+    loop = asyncio.get_event_loop()
+    if loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(asyncio.run, __batch_llm_query_bridge__(prompts))
+            return future.result()
+    return asyncio.run(__batch_llm_query_bridge__(prompts))
+
+def batch_rlm_query(tasks: list) -> list:
+    """
+    Execute multiple sub-RLMs concurrently.
+
+    This is more efficient than calling rlm_query() sequentially.
+    Each sub-RLM gets its own REPL environment and iteration loop.
+
+    Paper evidence: "aim for ~200k chars per call" - batching sub-tasks
+    improves both performance and cost efficiency.
+
+    Args:
+        tasks: List of dicts with 'task' (required) and 'context' (optional) keys.
+               Example: [{"task": "Summarize section A"}, {"task": "Summarize section B"}]
+
+    Returns:
+        List of sub-RLM results in the same order as input tasks
+
+    Example:
+        >>> tasks = [
+        ...     {"task": "What is the main theme of section 1?"},
+        ...     {"task": "What is the main theme of section 2?", "context": section2_text}
+        ... ]
+        >>> results = batch_rlm_query(tasks)
+        >>> print(results[0])  # Theme of section 1
+    """
+    if not tasks:
+        return []
+    # Convert dicts to proper format for the bridge
+    formatted_tasks = []
+    for t in tasks:
+        if isinstance(t, dict):
+            formatted_tasks.append({"task": t.get("task", ""), "context": t.get("context")})
+        else:
+            formatted_tasks.append({"task": str(t), "context": None})
+    import asyncio
+    loop = asyncio.get_event_loop()
+    if loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(asyncio.run, __batch_rlm_query_bridge__(formatted_tasks))
+            return future.result()
+    return asyncio.run(__batch_rlm_query_bridge__(formatted_tasks))
+
 # Utility functions
 def chunk_text(text: str, size: int = 10000, overlap: int = 500) -> list:
     """
@@ -353,6 +420,79 @@ def quote_match(pattern: str, max_length: int = 100) -> str:
             return result[:max_length] + "..."
         return result
     return None
+
+def chunk_by_headers(level: int = 2) -> list:
+    """
+    Chunk the context by Markdown headers at a specific level.
+
+    Use this for structured documents with clear section headers.
+    Paper evidence: "chunking by Markdown headers" is a recommended pattern.
+
+    Args:
+        level: Header level to split on (1 for #, 2 for ##, etc.)
+               Default is 2 (## headers)
+
+    Returns:
+        List of dicts with 'header', 'content', and 'start' keys.
+        Each chunk includes everything from the header to the next
+        header at the same level (or end of document).
+
+    Example:
+        >>> context = "# Main\\n## Intro\\nText\\n## Body\\nMore"
+        >>> chunks = chunk_by_headers(level=2)
+        >>> chunks[0]['header']  # '## Intro'
+    """
+    header_pattern = r'^' + '#' * level + r' .+$'
+    compiled = re.compile(header_pattern, re.MULTILINE)
+
+    matches = list(compiled.finditer(context))
+    chunks = []
+
+    for i, match in enumerate(matches):
+        header = match.group()
+        start = match.start()
+        # Content ends at next header or end of context
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(context)
+        content = context[match.end():end].strip()
+
+        chunks.append({
+            'header': header,
+            'content': content,
+            'start': start
+        })
+
+    return chunks
+
+def chunk_by_size(chars: int = 50000, overlap: int = 0) -> list:
+    """
+    Chunk the context by character count with optional overlap.
+
+    Use this for uniformly splitting large contexts when structure
+    isn't available. Aim for ~200k chars per chunk for optimal
+    cost/quality with batch_rlm_query().
+
+    Args:
+        chars: Maximum characters per chunk (default: 50000)
+        overlap: Characters to overlap between chunks (default: 0)
+
+    Returns:
+        List of text strings, each up to 'chars' in length.
+        With overlap > 0, consecutive chunks share characters.
+
+    Example:
+        >>> chunks = chunk_by_size(chars=100000, overlap=1000)
+        >>> for chunk in chunks:
+        ...     result = rlm_query("Summarize", chunk)
+    """
+    chunks = []
+    start = 0
+    while start < len(context):
+        end = min(start + chars, len(context))
+        chunks.append(context[start:end])
+        if end >= len(context):
+            break
+        start = end - overlap if overlap > 0 else end
+    return chunks
 
 print(f"RLM sandbox ready. Context: {len(context):,} chars")
 `;
@@ -402,6 +542,53 @@ def rlm_query(task: str, ctx: str = None) -> str:
     context_to_use = ctx if ctx is not None else __context_ref__
     return run_sync(__rlm_query_bridge__(task, context_to_use))
 
+def batch_llm_query(prompts: list) -> list:
+    """
+    Query an LLM with multiple prompts in parallel.
+
+    This is more efficient than calling llm_query() multiple times
+    as all prompts are sent to the host at once and processed in parallel.
+
+    Args:
+        prompts: List of prompts to send to the LLM
+
+    Returns:
+        List of LLM responses in the same order as prompts
+    """
+    if not prompts:
+        return []
+    from pyodide.ffi import run_sync
+    return run_sync(__batch_llm_query_bridge__(prompts))
+
+def batch_rlm_query(tasks: list) -> list:
+    """
+    Execute multiple sub-RLMs concurrently.
+
+    This is more efficient than calling rlm_query() sequentially.
+    Each sub-RLM gets its own REPL environment and iteration loop.
+
+    Paper evidence: "aim for ~200k chars per call" - batching sub-tasks
+    improves both performance and cost efficiency.
+
+    Args:
+        tasks: List of dicts with 'task' (required) and 'context' (optional) keys.
+               Example: [{"task": "Summarize section A"}, {"task": "Summarize section B"}]
+
+    Returns:
+        List of sub-RLM results in the same order as input tasks
+    """
+    if not tasks:
+        return []
+    # Convert dicts to proper format for the bridge
+    formatted_tasks = []
+    for t in tasks:
+        if isinstance(t, dict):
+            formatted_tasks.append({"task": t.get("task", ""), "context": t.get("context")})
+        else:
+            formatted_tasks.append({"task": str(t), "context": None})
+    from pyodide.ffi import run_sync
+    return run_sync(__batch_rlm_query_bridge__(formatted_tasks))
+
 # Utility functions
 def chunk_text(text: str, size: int = 10000, overlap: int = 500) -> list:
     """
@@ -688,6 +875,79 @@ def quote_match(pattern: str, max_length: int = 100) -> str:
             return result[:max_length] + "..."
         return result
     return None
+
+def chunk_by_headers(level: int = 2) -> list:
+    """
+    Chunk the context by Markdown headers at a specific level.
+
+    Use this for structured documents with clear section headers.
+    Paper evidence: "chunking by Markdown headers" is a recommended pattern.
+
+    Args:
+        level: Header level to split on (1 for #, 2 for ##, etc.)
+               Default is 2 (## headers)
+
+    Returns:
+        List of dicts with 'header', 'content', and 'start' keys.
+        Each chunk includes everything from the header to the next
+        header at the same level (or end of document).
+
+    Example:
+        >>> context = "# Main\\n## Intro\\nText\\n## Body\\nMore"
+        >>> chunks = chunk_by_headers(level=2)
+        >>> chunks[0]['header']  # '## Intro'
+    """
+    header_pattern = r'^' + '#' * level + r' .+$'
+    compiled = re.compile(header_pattern, re.MULTILINE)
+
+    matches = list(compiled.finditer(context))
+    chunks = []
+
+    for i, match in enumerate(matches):
+        header = match.group()
+        start = match.start()
+        # Content ends at next header or end of context
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(context)
+        content = context[match.end():end].strip()
+
+        chunks.append({
+            'header': header,
+            'content': content,
+            'start': start
+        })
+
+    return chunks
+
+def chunk_by_size(chars: int = 50000, overlap: int = 0) -> list:
+    """
+    Chunk the context by character count with optional overlap.
+
+    Use this for uniformly splitting large contexts when structure
+    isn't available. Aim for ~200k chars per chunk for optimal
+    cost/quality with batch_rlm_query().
+
+    Args:
+        chars: Maximum characters per chunk (default: 50000)
+        overlap: Characters to overlap between chunks (default: 0)
+
+    Returns:
+        List of text strings, each up to 'chars' in length.
+        With overlap > 0, consecutive chunks share characters.
+
+    Example:
+        >>> chunks = chunk_by_size(chars=100000, overlap=1000)
+        >>> for chunk in chunks:
+        ...     result = rlm_query("Summarize", chunk)
+    """
+    chunks = []
+    start = 0
+    while start < len(context):
+        end = min(start + chars, len(context))
+        chunks.append(context[start:end])
+        if end >= len(context):
+            break
+        start = end - overlap if overlap > 0 else end
+    return chunks
 
 print(f"RLM sandbox ready. Context: {len(context):,} chars")
 `;

@@ -217,6 +217,17 @@ async function evaluateExpression(expr: string): Promise<unknown> {
     return 0;
   }
 
+  // len(array[idx]) function - length of element at index
+  const lenArrayIdxMatch = expr.match(/^len\((\w+)\[(\d+)\]\)$/);
+  if (lenArrayIdxMatch) {
+    const arr = pythonState.variables.get(lenArrayIdxMatch[1]) as unknown[];
+    if (!arr) return 0;
+    const elem = arr[parseInt(lenArrayIdxMatch[2], 10)];
+    if (typeof elem === 'string') return elem.length;
+    if (Array.isArray(elem)) return elem.length;
+    return 0;
+  }
+
   // repr() function
   const reprMatch = expr.match(/^repr\((\w+)\)$/);
   if (reprMatch) {
@@ -459,6 +470,44 @@ async function evaluateExpression(expr: string): Promise<unknown> {
     return null;
   }
 
+  // chunk_by_headers call (4.3.1)
+  const chunkByHeadersMatch = expr.match(/^chunk_by_headers\((?:level=(\d+))?\)$/);
+  if (chunkByHeadersMatch) {
+    const level = chunkByHeadersMatch[1] ? parseInt(chunkByHeadersMatch[1], 10) : 2;
+    const context = pythonState.context;
+    const headerPattern = new RegExp(`^${'#'.repeat(level)} .+$`, 'gm');
+    const chunks: Array<{ header: string; content: string; start: number }> = [];
+
+    const matches = [...context.matchAll(headerPattern)];
+    for (let i = 0; i < matches.length; i++) {
+      const match = matches[i];
+      const nextMatch = matches[i + 1];
+      const start = match.index!;
+      const end = nextMatch ? nextMatch.index! : context.length;
+      const header = match[0];
+      const content = context.slice(start + header.length, end).trim();
+      chunks.push({ header, content, start });
+    }
+    return chunks;
+  }
+
+  // chunk_by_size call (4.3.2)
+  const chunkBySizeMatch = expr.match(/^chunk_by_size\((?:chars=(\d+))?(?:,?\s*overlap=(\d+))?\)$/);
+  if (chunkBySizeMatch) {
+    const chars = chunkBySizeMatch[1] ? parseInt(chunkBySizeMatch[1], 10) : 50000;
+    const overlap = chunkBySizeMatch[2] ? parseInt(chunkBySizeMatch[2], 10) : 0;
+    const context = pythonState.context;
+    const chunks: string[] = [];
+    let start = 0;
+    while (start < context.length) {
+      const end = Math.min(start + chars, context.length);
+      chunks.push(context.slice(start, end));
+      if (end >= context.length) break;
+      start = end - overlap;
+    }
+    return chunks;
+  }
+
   // Array access like chunks[0], results[0]['match'], matches[0][0], matches[0][1]
   // Handle tuple indexing: matches[0][0] for first element of tuple at index 0
   const tupleAccess = expr.match(/^(\w+)\[(\d+)\]\[(\d+)\]$/);
@@ -468,6 +517,19 @@ async function evaluateExpression(expr: string): Promise<unknown> {
     const tuple = arr[parseInt(tupleAccess[2], 10)] as unknown[];
     if (!tuple) return undefined;
     return tuple[parseInt(tupleAccess[3], 10)];
+  }
+
+  // Array access with negative slice: chunks[0][-5:]
+  const negativeSliceAccess = expr.match(/^(\w+)\[(\d+)\]\[(-?\d+):\]$/);
+  if (negativeSliceAccess) {
+    const arr = pythonState.variables.get(negativeSliceAccess[1]) as unknown[];
+    if (!arr) return undefined;
+    const elem = arr[parseInt(negativeSliceAccess[2], 10)];
+    if (typeof elem === 'string') {
+      const sliceStart = parseInt(negativeSliceAccess[3], 10);
+      return elem.slice(sliceStart);
+    }
+    return undefined;
   }
 
   // Array access like chunks[0], results[0]['match']
@@ -1263,6 +1325,166 @@ print(match)
         expect(result.error).toBeUndefined();
         expect(result.stdout).toContain('...');
         expect(result.stdout.trim().length).toBeLessThan(25);
+
+        await testSandbox.destroy();
+      });
+    });
+
+    describe('chunk_by_headers function (4.3.1)', () => {
+      it('should chunk context by markdown headers at default level 2', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize(`# Main Title
+Intro content.
+
+## Section 1
+Content for section 1.
+
+## Section 2
+Content for section 2.
+
+### Subsection
+Not at level 2.`);
+
+        const result = await testSandbox.execute(`
+chunks = chunk_by_headers()
+print(len(chunks))
+print(chunks[0]['header'])
+print(chunks[1]['header'])
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('2'); // Two ## headers
+        expect(result.stdout).toContain('## Section 1');
+        expect(result.stdout).toContain('## Section 2');
+
+        await testSandbox.destroy();
+      });
+
+      it('should chunk at specified header level', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize(`# H1 First
+Content 1.
+
+# H1 Second
+Content 2.
+
+## H2 Sub
+Sub content.`);
+
+        const result = await testSandbox.execute(`
+chunks = chunk_by_headers(level=1)
+print(len(chunks))
+print(chunks[0]['header'])
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('2'); // Two # headers
+        expect(result.stdout).toContain('# H1 First');
+
+        await testSandbox.destroy();
+      });
+
+      it('should return empty list when no headers at level', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize('Plain text with no headers.');
+
+        const result = await testSandbox.execute(`
+chunks = chunk_by_headers()
+print(len(chunks))
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout.trim()).toBe('0');
+
+        await testSandbox.destroy();
+      });
+
+      it('should include content between headers', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize(`## First
+First content here.
+
+## Second
+Second content here.`);
+
+        const result = await testSandbox.execute(`
+chunks = chunk_by_headers()
+print('content' in chunks[0])
+print(len(chunks[0]['content']) > 0)
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('True');
+
+        await testSandbox.destroy();
+      });
+    });
+
+    describe('chunk_by_size function (4.3.2)', () => {
+      it('should chunk context by character count', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize('A'.repeat(100));
+
+        const result = await testSandbox.execute(`
+chunks = chunk_by_size(chars=30)
+print(len(chunks))
+print(len(chunks[0]))
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('4'); // 100/30 = ~4 chunks
+        expect(result.stdout).toContain('30');
+
+        await testSandbox.destroy();
+      });
+
+      it('should support overlap parameter', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize('0123456789' + '0123456789' + '0123456789');
+
+        const result = await testSandbox.execute(`
+chunks = chunk_by_size(chars=15, overlap=5)
+print(len(chunks))
+print(chunks[0][-5:])
+print(chunks[1][:5])
+`);
+
+        expect(result.error).toBeUndefined();
+        // With overlap, consecutive chunks should share characters
+        const lines = result.stdout.trim().split('\n');
+        expect(lines[1]).toBe(lines[2]); // Last 5 of chunk[0] == first 5 of chunk[1]
+
+        await testSandbox.destroy();
+      });
+
+      it('should use default parameters when not specified', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize('Short context');
+
+        const result = await testSandbox.execute(`
+chunks = chunk_by_size()
+print(len(chunks))
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('1'); // Short text = 1 chunk
+
+        await testSandbox.destroy();
+      });
+
+      it('should return single chunk when context smaller than chars', async () => {
+        const testSandbox = createSandbox(defaultConfig, defaultBridges);
+        await testSandbox.initialize('Small text');
+
+        const result = await testSandbox.execute(`
+chunks = chunk_by_size(chars=1000)
+print(len(chunks))
+print(chunks[0])
+`);
+
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).toContain('1');
+        expect(result.stdout).toContain('Small text');
 
         await testSandbox.destroy();
       });

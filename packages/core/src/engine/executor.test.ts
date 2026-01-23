@@ -642,6 +642,41 @@ describe('Executor', () => {
       expect(call.systemPrompt).toContain('FINAL');
       expect(call.systemPrompt).toContain('FINAL_VAR');
     });
+
+    it('should include promptHints from config in system prompt (4.2.3)', async () => {
+      const adapter = createMockAdapter([{ content: 'FINAL(Done)' }]);
+      router.register('test', adapter);
+
+      const configWithHints: RLMConfig = {
+        ...config,
+        promptHints: ['Always batch LLM queries', 'Limit to 5 subcalls per iteration'],
+      };
+      const executor = new Executor(configWithHints, router);
+      await executor.execute({
+        task: 'Task',
+        context: 'Context',
+      });
+
+      const call = (adapter.complete as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(call.systemPrompt).toContain('MODEL HINTS');
+      expect(call.systemPrompt).toContain('Always batch LLM queries');
+      expect(call.systemPrompt).toContain('Limit to 5 subcalls per iteration');
+    });
+
+    it('should not include MODEL HINTS section when no hints configured (4.2.2)', async () => {
+      const adapter = createMockAdapter([{ content: 'FINAL(Done)' }]);
+      router.register('test', adapter);
+
+      const executor = new Executor(config, router);
+      await executor.execute({
+        task: 'Task',
+        context: 'Context',
+      });
+
+      const call = (adapter.complete as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      // Should not contain MODEL HINTS section when no hints are defined
+      expect(call.systemPrompt).not.toContain('MODEL HINTS');
+    });
   });
 
   describe('trace structure', () => {
@@ -691,6 +726,229 @@ describe('Executor', () => {
 
       expect(result.trace.subcalls).toBeDefined();
       expect(Array.isArray(result.trace.subcalls)).toBe(true);
+    });
+  });
+
+  describe('batch_rlm_query', () => {
+    it('should execute multiple tasks concurrently (2.2.5)', async () => {
+      // Track subcall hooks to verify batch execution
+      const subcallTasks: string[] = [];
+      const onSubcall = vi.fn((info: { depth: number; task: string }) => {
+        subcallTasks.push(info.task);
+      });
+
+      // Capture the onBatchRLMQuery bridge
+      let capturedBridges: { onBatchRLMQuery: (tasks: Array<{ task: string; context?: string }>) => Promise<string[]> } | null = null;
+      const mockSandbox = createMockSandbox();
+
+      const { createSandbox } = await import('../repl/sandbox.js');
+      vi.mocked(createSandbox).mockImplementationOnce((config, bridges) => {
+        capturedBridges = bridges as typeof capturedBridges;
+        return mockSandbox;
+      });
+
+      // Mock adapter returns FINAL immediately
+      const adapter = createMockAdapter([
+        { content: 'FINAL(Main done)' },
+        // Sub-task responses
+        { content: 'FINAL(Task 1 result)' },
+        { content: 'FINAL(Task 2 result)' },
+        { content: 'FINAL(Task 3 result)' },
+      ]);
+      router.register('test', adapter);
+
+      const executor = new Executor(config, router);
+      await executor.execute({
+        task: 'Main task',
+        context: 'Context',
+        hooks: { onSubcall },
+        budget: { maxBatchConcurrency: 3 },
+      });
+
+      // Verify bridges were captured
+      expect(capturedBridges).not.toBeNull();
+      expect(capturedBridges!.onBatchRLMQuery).toBeDefined();
+
+      // Call the batch bridge directly
+      const batchTasks = [
+        { task: 'Task 1', context: 'Context 1' },
+        { task: 'Task 2', context: 'Context 2' },
+        { task: 'Task 3' }, // Uses default context
+      ];
+      const results = await capturedBridges!.onBatchRLMQuery(batchTasks);
+
+      // Verify all tasks were executed
+      expect(results).toHaveLength(3);
+      expect(subcallTasks).toContain('Task 1');
+      expect(subcallTasks).toContain('Task 2');
+      expect(subcallTasks).toContain('Task 3');
+    });
+
+    it('should return empty array for empty batch (2.2.5)', async () => {
+      let capturedBridges: { onBatchRLMQuery: (tasks: Array<{ task: string; context?: string }>) => Promise<string[]> } | null = null;
+      const mockSandbox = createMockSandbox();
+
+      const { createSandbox } = await import('../repl/sandbox.js');
+      vi.mocked(createSandbox).mockImplementationOnce((config, bridges) => {
+        capturedBridges = bridges as typeof capturedBridges;
+        return mockSandbox;
+      });
+
+      const adapter = createMockAdapter([{ content: 'FINAL(Done)' }]);
+      router.register('test', adapter);
+
+      const executor = new Executor(config, router);
+      await executor.execute({
+        task: 'Main task',
+        context: 'Context',
+      });
+
+      // Call batch with empty array
+      const results = await capturedBridges!.onBatchRLMQuery([]);
+      expect(results).toEqual([]);
+    });
+
+    it('should enforce budget limits for batch subcalls (2.2.6)', async () => {
+      let capturedBridges: { onBatchRLMQuery: (tasks: Array<{ task: string; context?: string }>) => Promise<string[]> } | null = null;
+      const mockSandbox = createMockSandbox();
+
+      const { createSandbox } = await import('../repl/sandbox.js');
+      vi.mocked(createSandbox).mockImplementationOnce((config, bridges) => {
+        capturedBridges = bridges as typeof capturedBridges;
+        return mockSandbox;
+      });
+
+      // Adapter for main task and direct answers
+      const adapter = createMockAdapter([
+        { content: 'FINAL(Main done)' },
+        { content: 'Direct answer 1' },
+        { content: 'Direct answer 2' },
+      ]);
+      router.register('test', adapter);
+
+      // Create executor at depth 1 with maxDepth 1 - subcalls blocked
+      const executor = new Executor(config, router, 1);
+      await executor.execute({
+        task: 'Main task',
+        context: 'Context',
+        budget: { maxDepth: 1 }, // At max depth, subcalls should be blocked
+      });
+
+      // Call batch - should use directAnswer since at max depth
+      const results = await capturedBridges!.onBatchRLMQuery([
+        { task: 'Task 1' },
+        { task: 'Task 2' },
+      ]);
+
+      // Results should contain the "Cannot spawn" message from directAnswer
+      expect(results).toHaveLength(2);
+      expect(results[0]).toContain('Cannot spawn sub-RLM');
+      expect(results[1]).toContain('Cannot spawn sub-RLM');
+    });
+
+    it('should handle partial failures gracefully (2.2.7)', async () => {
+      let capturedBridges: { onBatchRLMQuery: (tasks: Array<{ task: string; context?: string }>) => Promise<string[]> } | null = null;
+      const mockSandbox = createMockSandbox();
+
+      const { createSandbox } = await import('../repl/sandbox.js');
+      vi.mocked(createSandbox).mockImplementationOnce((config, bridges) => {
+        capturedBridges = bridges as typeof capturedBridges;
+        return mockSandbox;
+      });
+
+      // Set up adapter that fails on the second call
+      let callCount = 0;
+      const adapter: LLMAdapter = {
+        complete: vi.fn().mockImplementation(async () => {
+          callCount++;
+          if (callCount === 3) {
+            // Third call (second subtask) throws
+            throw new Error('API rate limit exceeded');
+          }
+          return {
+            content: `FINAL(Result ${callCount})`,
+            inputTokens: 100,
+            outputTokens: 50,
+            cost: 0.001,
+          };
+        }),
+      };
+      router.register('test', adapter);
+
+      const executor = new Executor(config, router);
+      await executor.execute({
+        task: 'Main task',
+        context: 'Context',
+        budget: { maxDepth: 3 },
+      });
+
+      // Call batch with 3 tasks - one will fail
+      const results = await capturedBridges!.onBatchRLMQuery([
+        { task: 'Task 1' },
+        { task: 'Task 2' }, // This one will fail
+        { task: 'Task 3' },
+      ]);
+
+      // All 3 should have results (2 success, 1 error)
+      expect(results).toHaveLength(3);
+      // The failed task should have an error message
+      const errorResult = results.find(r => r.includes('[Error:'));
+      expect(errorResult).toBeDefined();
+      expect(errorResult).toContain('API rate limit exceeded');
+    });
+
+    it('should respect maxBatchConcurrency limit (2.2.6)', async () => {
+      let capturedBridges: { onBatchRLMQuery: (tasks: Array<{ task: string; context?: string }>) => Promise<string[]> } | null = null;
+      const mockSandbox = createMockSandbox();
+
+      const { createSandbox } = await import('../repl/sandbox.js');
+      vi.mocked(createSandbox).mockImplementationOnce((config, bridges) => {
+        capturedBridges = bridges as typeof capturedBridges;
+        return mockSandbox;
+      });
+
+      // Track concurrent executions
+      let maxConcurrent = 0;
+      let currentConcurrent = 0;
+      const adapter: LLMAdapter = {
+        complete: vi.fn().mockImplementation(async () => {
+          currentConcurrent++;
+          maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
+          await new Promise(resolve => setTimeout(resolve, 10)); // Small delay
+          currentConcurrent--;
+          return {
+            content: 'FINAL(Result)',
+            inputTokens: 100,
+            outputTokens: 50,
+            cost: 0.001,
+          };
+        }),
+      };
+      router.register('test', adapter);
+
+      const executor = new Executor(config, router);
+      await executor.execute({
+        task: 'Main task',
+        context: 'Context',
+        budget: { maxBatchConcurrency: 2, maxDepth: 3 },
+      });
+
+      // Reset tracking after main execution
+      maxConcurrent = 0;
+      currentConcurrent = 0;
+
+      // Call batch with 5 tasks, but only 2 should run concurrently
+      await capturedBridges!.onBatchRLMQuery([
+        { task: 'Task 1' },
+        { task: 'Task 2' },
+        { task: 'Task 3' },
+        { task: 'Task 4' },
+        { task: 'Task 5' },
+      ]);
+
+      // Max concurrent should be limited to batch concurrency
+      // Note: Due to the worker pattern, we expect at most 2 concurrent
+      expect(maxConcurrent).toBeLessThanOrEqual(2);
     });
   });
 

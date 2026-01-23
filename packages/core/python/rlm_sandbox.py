@@ -149,6 +149,7 @@ class RlmSandbox:
         self._globals["llm_query"] = self._make_llm_query()
         self._globals["rlm_query"] = self._make_rlm_query()
         self._globals["batch_llm_query"] = self._make_batch_llm_query()
+        self._globals["batch_rlm_query"] = self._make_batch_rlm_query()
 
     def _make_llm_query(self):
         """Create the llm_query function for the sandbox."""
@@ -224,6 +225,54 @@ class RlmSandbox:
                 return [str(response)] * len(prompts)
         return batch_llm_query
 
+    def _make_batch_rlm_query(self):
+        """Create the batch_rlm_query function for the sandbox."""
+        from typing import List, Dict, Any as TypingAny, Optional
+
+        def batch_rlm_query(tasks: List[Dict[str, TypingAny]]) -> List[str]:
+            """
+            Execute multiple sub-RLMs concurrently.
+
+            This is more efficient than calling rlm_query() sequentially.
+            Each sub-RLM gets its own REPL environment and iteration loop.
+
+            Paper evidence: "aim for ~200k chars per call" - batching sub-tasks
+            improves both performance and cost efficiency.
+
+            Args:
+                tasks: List of dicts with 'task' (required) and 'context' (optional) keys.
+                       Example: [{"task": "Summarize section A"}, {"task": "Summarize section B"}]
+
+            Returns:
+                List of sub-RLM results in the same order as input tasks
+            """
+            if not tasks:
+                return []
+
+            # Normalize tasks to proper format
+            formatted_tasks = []
+            for t in tasks:
+                if isinstance(t, dict):
+                    formatted_tasks.append({
+                        "task": t.get("task", ""),
+                        "context": t.get("context")
+                    })
+                else:
+                    formatted_tasks.append({"task": str(t), "context": None})
+
+            logger.debug(f"batch_rlm_query: num_tasks={len(formatted_tasks)}")
+            response = self._bridge_call("bridge:batch_rlm", {"tasks": formatted_tasks})
+
+            # Response is a list of strings
+            if isinstance(response, list):
+                logger.debug(f"batch_rlm_query: num_responses={len(response)}")
+                return response
+            else:
+                # Handle unexpected response format
+                logger.error(f"batch_rlm_query: unexpected response type {type(response)}")
+                return [str(response)] * len(formatted_tasks)
+        return batch_rlm_query
+
     def _bridge_call(self, method: str, params: Dict[str, Any]) -> Any:
         """
         Make a bridge callback to the host via JSON-RPC.
@@ -285,6 +334,8 @@ class RlmSandbox:
         self._globals["count_lines"] = self._make_count_lines()
         self._globals["get_line"] = self._make_get_line()
         self._globals["quote_match"] = self._make_quote_match()
+        self._globals["chunk_by_headers"] = self._make_chunk_by_headers()
+        self._globals["chunk_by_size"] = self._make_chunk_by_size()
 
     def _make_chunk_text(self):
         """Create the chunk_text utility function."""
@@ -625,6 +676,89 @@ class RlmSandbox:
                 return result
             return None
         return quote_match
+
+    def _make_chunk_by_headers(self):
+        """Create the chunk_by_headers utility function."""
+        import re
+
+        def chunk_by_headers(level: int = 2) -> list:
+            """
+            Chunk the context by Markdown headers at a specific level.
+
+            Use this for structured documents with clear section headers.
+            Paper evidence: "chunking by Markdown headers" is a recommended pattern.
+
+            Args:
+                level: Header level to split on (1 for #, 2 for ##, etc.)
+                       Default is 2 (## headers)
+
+            Returns:
+                List of dicts with 'header', 'content', and 'start' keys.
+                Each chunk includes everything from the header to the next
+                header at the same level (or end of document).
+
+            Example:
+                >>> chunks = chunk_by_headers(level=2)
+                >>> chunks[0]['header']  # '## Intro'
+            """
+            header_pattern = r'^' + '#' * level + r' .+$'
+            compiled = re.compile(header_pattern, re.MULTILINE)
+
+            context = self._globals.get("context", "")
+            matches = list(compiled.finditer(context))
+            chunks = []
+
+            for i, match in enumerate(matches):
+                header = match.group()
+                start = match.start()
+                # Content ends at next header or end of context
+                end = matches[i + 1].start() if i + 1 < len(matches) else len(context)
+                content = context[match.end():end].strip()
+
+                chunks.append({
+                    'header': header,
+                    'content': content,
+                    'start': start
+                })
+
+            return chunks
+        return chunk_by_headers
+
+    def _make_chunk_by_size(self):
+        """Create the chunk_by_size utility function."""
+
+        def chunk_by_size(chars: int = 50000, overlap: int = 0) -> list:
+            """
+            Chunk the context by character count with optional overlap.
+
+            Use this for uniformly splitting large contexts when structure
+            isn't available. Aim for ~200k chars per chunk for optimal
+            cost/quality with batch_rlm_query().
+
+            Args:
+                chars: Maximum characters per chunk (default: 50000)
+                overlap: Characters to overlap between chunks (default: 0)
+
+            Returns:
+                List of text strings, each up to 'chars' in length.
+                With overlap > 0, consecutive chunks share characters.
+
+            Example:
+                >>> chunks = chunk_by_size(chars=100000, overlap=1000)
+                >>> for chunk in chunks:
+                ...     result = rlm_query("Summarize", chunk)
+            """
+            context = self._globals.get("context", "")
+            chunks = []
+            start = 0
+            while start < len(context):
+                end = min(start + chars, len(context))
+                chunks.append(context[start:end])
+                if end >= len(context):
+                    break
+                start = end - overlap if overlap > 0 else end
+            return chunks
+        return chunk_by_size
 
     def get_variable(self, name: str) -> Dict[str, Any]:
         """
