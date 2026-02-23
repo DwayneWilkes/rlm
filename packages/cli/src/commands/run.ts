@@ -8,7 +8,7 @@
 
 import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
-import { RLM, type SandboxFactory } from '@rlm/core';
+import { RLM, type SandboxFactory, type ExecutionMode } from '@rlm/core';
 // pdf-parse loaded lazily — depends on pdfjs-dist which requires DOM APIs (DOMMatrix)
 // that don't exist in Node.js without @napi-rs/canvas native bindings
 type PDFParseModule = typeof import('pdf-parse');
@@ -17,6 +17,7 @@ import { detectBestBackend, createSandbox } from '../sandbox/index.js';
 import { createFormatter, type OutputFormat } from '../output/index.js';
 import { validateFilePathOrThrow } from '../utils/index.js';
 import type { SandboxBackend } from '../types/index.js';
+import { loadTemplate } from '../templates/loader.js';
 
 /**
  * Options for the run command.
@@ -33,6 +34,9 @@ interface RunOptions {
   maxTime?: number;
   temperature?: number;
   topP?: number;
+  mode?: ExecutionMode;
+  template?: string;
+  synthesize?: boolean;
 }
 
 /**
@@ -98,6 +102,18 @@ export function createRunCommand(): Command {
       'Nucleus sampling threshold (0.0-1.0)',
       parseFloat
     )
+    .option(
+      '-m, --mode <mode>',
+      'Execution mode: iterative, direct, auto (default: auto)'
+    )
+    .option(
+      '-t, --template <name>',
+      'Use a predefined prompt template (e.g. academic-summary)'
+    )
+    .option(
+      '--synthesize',
+      'Run a synthesis pass on iterative output'
+    )
     .action(async (task: string, options: RunOptions) => {
       try {
         // Load config from file
@@ -131,6 +147,30 @@ export function createRunCommand(): Command {
             ...(options.temperature !== undefined && { temperature: options.temperature }),
             ...(options.topP !== undefined && { top_p: options.topP }),
           };
+        }
+
+        // Load template if specified (template provides defaults, CLI overrides)
+        let templateSystemPrompt: string | undefined;
+        let templateMode: ExecutionMode | undefined;
+        let templateSynthesize: boolean | undefined;
+        let templateSynthesizePrompt: string | undefined;
+
+        if (options.template) {
+          const template = loadTemplate(options.template);
+          templateSystemPrompt = template.systemPrompt;
+          templateMode = template.mode;
+          templateSynthesize = template.synthesize;
+          templateSynthesizePrompt = template.synthesizePrompt;
+
+          // Template inference as defaults (CLI overrides)
+          if (template.inference && !cliOverrides.inference) {
+            cliOverrides.inference = {
+              ...template.inference,
+              ...resolvedConfig.inference,
+              ...(options.temperature !== undefined && { temperature: options.temperature }),
+              ...(options.topP !== undefined && { top_p: options.topP }),
+            };
+          }
         }
 
         // Merge configs (CLI flags take precedence over resolved profile)
@@ -210,10 +250,18 @@ export function createRunCommand(): Command {
           console.error(`[rlm] Context: ${context.length.toLocaleString()} characters`);
         }
 
+        // Resolve execution mode: CLI flag > template > auto
+        const mode = options.mode ?? templateMode;
+        const synthesize = options.synthesize ?? templateSynthesize;
+
         // Execute the task
         const result = await rlm.execute({
           task,
           context,
+          mode,
+          systemPrompt: templateSystemPrompt,
+          synthesize,
+          synthesizePrompt: templateSynthesizePrompt,
         });
 
         // Output the result
