@@ -25,7 +25,7 @@ vi.mock('../../src/repl/pyodide.js', async (importOriginal) => {
 });
 
 import { RLM } from '../../src/rlm.js';
-import type { LLMAdapter } from '../../src/types.js';
+import type { LLMAdapter, ExecuteOptions } from '../../src/types.js';
 
 describe('RLM', () => {
   describe('constructor', () => {
@@ -287,24 +287,58 @@ describe('RLM', () => {
 
   describe('execute with real executor', () => {
     it('should execute with real executor when available', async () => {
-      // This test verifies that the execute method delegates to Executor
-      // when it's available. The mocks set up at file level handle pyodide.
       const rlm = new RLM({
         provider: 'ollama',
         model: 'llama3.2',
       });
 
-      // Execute should work because Executor exists
       const result = await rlm.execute({
         task: 'Test task',
         context: 'Test context',
       });
 
-      // Result comes from real Executor (which gets mocked sandbox)
       expect(result).toHaveProperty('success');
       expect(result).toHaveProperty('output');
       expect(result).toHaveProperty('trace');
       expect(result).toHaveProperty('usage');
+    });
+  });
+
+  describe('resolveMode', () => {
+    it('should return iterative when mode is explicitly iterative', () => {
+      const rlm = new RLM({ provider: 'ollama', model: 'llama3.2' });
+      const mode = rlm.resolveMode({ task: 'T', context: 'C', mode: 'iterative' });
+      expect(mode).toBe('iterative');
+    });
+
+    it('should return direct when mode is explicitly direct', () => {
+      const rlm = new RLM({ provider: 'ollama', model: 'llama3.2' });
+      const mode = rlm.resolveMode({ task: 'T', context: 'C', mode: 'direct' });
+      expect(mode).toBe('direct');
+    });
+
+    it('should auto-select direct for small context', () => {
+      const rlm = new RLM({ provider: 'anthropic', model: 'claude-sonnet-4-6' });
+      // 200K * 4 chars/token * 0.7 = 560K chars threshold
+      const smallContext = 'x'.repeat(100_000); // ~25K tokens, well under 140K threshold
+      const mode = rlm.resolveMode({ task: 'T', context: smallContext });
+      expect(mode).toBe('direct');
+    });
+
+    it('should auto-select iterative for large context', () => {
+      const rlm = new RLM({ provider: 'ollama', model: 'qwen3:latest' });
+      // qwen3:latest has 32K limit, threshold = 32K * 0.7 = 22.4K tokens = ~89.6K chars
+      const largeContext = 'x'.repeat(200_000); // ~50K tokens, well over threshold
+      const mode = rlm.resolveMode({ task: 'T', context: largeContext });
+      expect(mode).toBe('iterative');
+    });
+
+    it('should use 200K default for unknown models', () => {
+      const rlm = new RLM({ provider: 'custom', model: 'unknown-model' });
+      // 200K * 4 * 0.7 = 560K chars threshold
+      const mediumContext = 'x'.repeat(100_000); // ~25K tokens, well under 140K
+      const mode = rlm.resolveMode({ task: 'T', context: mediumContext });
+      expect(mode).toBe('direct');
     });
   });
 });

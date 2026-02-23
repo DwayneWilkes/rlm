@@ -219,6 +219,41 @@ export interface REPLConfig {
 }
 
 // ============================================
+// EXECUTION MODE
+// ============================================
+
+/**
+ * Execution mode for RLM tasks.
+ * - 'iterative': Full REPL loop with Python sandbox (default for large contexts)
+ * - 'direct': Single LLM pass without sandbox (best for in-context-window tasks)
+ * - 'auto': Automatically select based on context size vs model context limit
+ */
+export type ExecutionMode = 'iterative' | 'direct' | 'auto';
+
+/**
+ * Model context window limits in tokens.
+ * Used by auto mode to decide between direct and iterative execution.
+ */
+export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
+  'claude-opus-4-6': 200_000,
+  'claude-sonnet-4-6': 200_000,
+  'claude-haiku-4-5-20251001': 200_000,
+  'claude-sonnet-4-20250514': 200_000,
+  'claude-sonnet-4-5-20250514': 200_000,
+  'gpt-4o': 128_000,
+  'gpt-4o-mini': 128_000,
+  'gpt-4-turbo': 128_000,
+  'o1': 200_000,
+  'o1-mini': 128_000,
+  'qwen3:latest': 32_000,
+  'llama3.2': 128_000,
+  'gemini-2.0-flash': 1_048_576,
+  'gemini-2.5-pro': 1_048_576,
+  'mistral-large-latest': 128_000,
+  'command-r-plus': 128_000,
+};
+
+// ============================================
 // EXECUTION
 // ============================================
 
@@ -246,6 +281,14 @@ export interface ExecuteOptions {
   budget?: Partial<Budget>;
   /** Callbacks for execution events */
   hooks?: ExecutionHooks;
+  /** Execution mode: 'iterative', 'direct', or 'auto' (default: 'auto') */
+  mode?: ExecutionMode;
+  /** Custom system prompt (used by direct mode and templates) */
+  systemPrompt?: string;
+  /** Run a synthesis pass on iterative output */
+  synthesize?: boolean;
+  /** Custom prompt for the synthesis pass */
+  synthesizePrompt?: string;
 }
 
 /**

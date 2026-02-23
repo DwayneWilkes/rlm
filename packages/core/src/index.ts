@@ -61,6 +61,7 @@ export type {
   // Execution types
   ExecuteOptions,
   ExecutionHooks,
+  ExecutionMode,
 
   // Result types
   RLMResult,
@@ -88,7 +89,7 @@ export type {
  * console.log(DEFAULT_BUDGET.maxCost); // 5.0
  * ```
  */
-export { DEFAULT_BUDGET, DEFAULT_REPL_CONFIG } from './types.js';
+export { DEFAULT_BUDGET, DEFAULT_REPL_CONFIG, MODEL_CONTEXT_LIMITS } from './types.js';
 
 // ============================================
 // UTILITIES
