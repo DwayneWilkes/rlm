@@ -36,11 +36,11 @@
 - [x] 5.1 Create `src/protocol.rs` and `src/server.rs`: canonical MCP server pattern (copy from another Liberation_Labs tool, adapt).
 - [x] 5.2 Create `src/tools/mod.rs`, `src/tools/execute.rs`, `src/tools/templates.rs`: `ToolHandler` trait with `AppContext`. `rlm_execute` tool (parameters: task, context, mode, template, budget overrides). `rlm_templates` tool (no parameters, returns list). Write tool schema tests.
 - [x] 5.3 Wire `src/main.rs` CLI: `serve` → MCP server, `run` → load config → build engine → execute → format output, `config show` → display resolved config, `templates` → list templates. Write argument parsing tests.
-- [ ] 5.4 Integration test: CLI `run` with mock adapter → config → engine → result. Verify full pipeline produces expected output format.
+- [x] 5.4 Integration test: CLI `run` with mock adapter → config → engine → result. Verify full pipeline produces expected output format.
 - [x] 5.5 `cargo test` — all tests pass. `cargo clippy` — no warnings. Build release binary.
 
 ## 6. Deployment
 
 - [x] 6.1 Update `.mcp.json` with new RLM binary path and env vars.
 - [x] 6.2 Update shell wrapper at `/mnt/d/dev/bin/rlm` to point at Rust binary.
-- [ ] 6.3 E2E verification: `rlm run "Summarize" --context <test-file> --template academic-summary` with a real provider.
+- [x] 6.3 E2E verification: `rlm run "Summarize" --context <test-file> --template academic-summary` with a real provider.

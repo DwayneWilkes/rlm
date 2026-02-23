@@ -1,27 +1,16 @@
 #![deny(unsafe_code)]
 
-mod budget;
-mod config;
-mod engine;
-mod llm;
-mod prompt;
-mod protocol;
-mod sandbox;
-mod server;
-mod tools;
-mod types;
-
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use config::{build_config, load_config_file, resolve_profile, CliOverrides};
-use engine::direct::DirectExecutor;
-use engine::iterative::IterativeExecutor;
-use engine::mode::resolve_mode;
-use prompt::templates::list_templates;
-use sandbox::python::PythonSandbox;
-use types::{Executor, Mode, OutputFormat, ProviderConfig};
+use rlm::config::{build_config, load_config_file, resolve_profile, CliOverrides};
+use rlm::engine::direct::DirectExecutor;
+use rlm::engine::iterative::IterativeExecutor;
+use rlm::engine::mode::resolve_mode;
+use rlm::prompt::templates::list_templates;
+use rlm::sandbox::python::PythonSandbox;
+use rlm::types::{Executor, Mode, OutputFormat, ProviderConfig};
 
 #[derive(Parser)]
 #[command(name = "rlm", version, about = "Read-Loop-Mond — iterative LLM + code execution engine")]
@@ -120,8 +109,8 @@ fn main() {
 }
 
 fn cmd_serve() -> anyhow::Result<()> {
-    let tools = tools::all_tools();
-    let srv = server::Server::new(tools);
+    let tools = rlm::tools::all_tools();
+    let srv = rlm::server::Server::new(tools);
     srv.run();
     Ok(())
 }
@@ -162,7 +151,7 @@ fn cmd_run(
     let mode = resolve_mode(config.mode, &context, config.provider.model());
 
     // Build LLM client
-    let client = tools::execute::build_client_from_config(&config)?;
+    let client = rlm::tools::execute::build_client_from_config(&config)?;
 
     // Execute
     let result = match mode {
@@ -213,7 +202,7 @@ fn cmd_config_show(
         None,
         false,
     )?;
-    println!("{}", config::display_config(&config));
+    println!("{}", rlm::config::display_config(&config));
     Ok(())
 }
 
@@ -235,7 +224,7 @@ fn load_resolved_config(
     mode_str: Option<&str>,
     template_name: Option<&str>,
     synthesize: bool,
-) -> anyhow::Result<types::RlmConfig> {
+) -> anyhow::Result<rlm::types::RlmConfig> {
     let mode = mode_str.map(|m| match m {
         "direct" => Mode::Direct,
         "iterative" => Mode::Iterative,
@@ -269,12 +258,12 @@ fn load_resolved_config(
         }
         None => {
             // No config file — use defaults
-            let profile = types::Profile {
+            let profile = rlm::types::Profile {
                 provider: Some(ProviderConfig::Anthropic {
                     model: "claude-sonnet-4-20250514".to_string(),
                     api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
                 }),
-                ..types::Profile::default()
+                ..rlm::types::Profile::default()
             };
             build_config(&profile, &overrides)
         }

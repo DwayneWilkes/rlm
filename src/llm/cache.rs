@@ -6,15 +6,14 @@ use crate::types::{LlmRequest, LlmResponse};
 
 /// In-memory response cache keyed by content hash of the request.
 /// Scoped to a single execution — not persisted.
+#[derive(Default)]
 pub struct ResponseCache {
     entries: HashMap<String, LlmResponse>,
 }
 
 impl ResponseCache {
     pub fn new() -> Self {
-        Self {
-            entries: HashMap::new(),
-        }
+        Self::default()
     }
 
     /// Look up a cached response for the given request.
@@ -32,6 +31,11 @@ impl ResponseCache {
     /// Number of cached entries.
     pub fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    /// Whether the cache is empty.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 
     /// Compute a stable cache key from the request by hashing the JSON-serialized
