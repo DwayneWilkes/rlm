@@ -26,6 +26,7 @@ import { LLMRouter } from '../llm/router.js';
 import { BudgetController } from '../budget/controller.js';
 import { parseResponse } from './parser.js';
 import { getModelPromptHints } from '../llm/adapters/anthropic.js';
+import { validateInferenceOptions } from './inference-validator.js';
 
 /**
  * Executes RLM tasks with iterative LLM interaction and Python sandbox.
@@ -89,6 +90,10 @@ export class Executor {
     const executionId = crypto.randomUUID();
     const warnings: string[] = [];
 
+    // Validate inference options and warn about incompatible combinations
+    const inferenceWarnings = validateInferenceOptions(this.config.inference);
+    warnings.push(...inferenceWarnings);
+
     // Initialize budget controller with merged budgets
     const budget = new BudgetController(
       { ...DEFAULT_BUDGET, ...this.config.defaultBudget, ...options.budget },
@@ -122,6 +127,7 @@ export class Executor {
           model: this.config.subcallModel ?? this.config.model,
           systemPrompt: 'You are a helpful assistant. Be concise.',
           userPrompt: prompt,
+          inference: this.config.inference,
         });
         budget.record({
           cost: response.cost,
@@ -265,6 +271,7 @@ export class Executor {
           systemPrompt,
           userPrompt,
           maxTokens: 8192,
+          inference: this.config.inference,
         });
 
         budget.record({
@@ -522,6 +529,7 @@ Begin by examining the context, then work toward answering the task.`;
       model: this.config.subcallModel ?? this.config.model,
       systemPrompt: 'Answer concisely based on the context provided.',
       userPrompt: `Context:\n${preview}\n\nTask: ${task}`,
+      inference: this.config.inference,
     });
     return response.content;
   }
@@ -547,6 +555,7 @@ Begin by examining the context, then work toward answering the task.`;
       systemPrompt: 'Provide your best answer based on the work done so far.',
       userPrompt: `Original task: ${task}\n\nLast execution output:\n${lastOutput || '[none]'}\n\nProvide your best answer now.`,
       maxTokens: 2048,
+      inference: this.config.inference,
     });
 
     budget.record({

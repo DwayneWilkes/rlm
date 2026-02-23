@@ -612,5 +612,116 @@ describe('createRunCommand', () => {
         }
       });
     });
+
+    describe('inference options', () => {
+      it('should pass --temperature flag to config merge', async () => {
+        mockExecute.mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          trace: {},
+          usage: {},
+          warnings: [],
+        });
+
+        const program = new Command().addCommand(createRunCommand());
+        await program.parseAsync(['run', 'Task', '--temperature', '0.8'], { from: 'user' });
+
+        // Verify mergeConfig was called with inference containing temperature
+        expect(mockMergeConfig).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            inference: expect.objectContaining({
+              temperature: 0.8,
+            }),
+          })
+        );
+      });
+
+      it('should pass --top-p flag to config merge', async () => {
+        mockExecute.mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          trace: {},
+          usage: {},
+          warnings: [],
+        });
+
+        const program = new Command().addCommand(createRunCommand());
+        await program.parseAsync(['run', 'Task', '--top-p', '0.95'], { from: 'user' });
+
+        // Verify mergeConfig was called with inference containing top_p
+        expect(mockMergeConfig).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            inference: expect.objectContaining({
+              top_p: 0.95,
+            }),
+          })
+        );
+      });
+
+      it('should combine --temperature and --top-p flags', async () => {
+        mockExecute.mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          trace: {},
+          usage: {},
+          warnings: [],
+        });
+
+        const program = new Command().addCommand(createRunCommand());
+        await program.parseAsync(['run', 'Task', '--temperature', '1.0', '--top-p', '0.9'], { from: 'user' });
+
+        // Verify both options are merged
+        expect(mockMergeConfig).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            inference: expect.objectContaining({
+              temperature: 1.0,
+              top_p: 0.9,
+            }),
+          })
+        );
+      });
+
+      it('should pass inference to RLM constructor', async () => {
+        // Set up resolved config to include inference
+        mockResolveProfile.mockReturnValue({
+          provider: 'ollama',
+          model: 'llama3.2',
+          inference: { temperature: 0.7, top_p: 0.9 },
+          budget: { maxCost: 5.0, maxIterations: 30, maxDepth: 2, maxTime: 300000 },
+          repl: { backend: 'auto', timeout: 30000 },
+          output: { format: 'text' },
+        } as any);
+
+        mockMergeConfig.mockReturnValue({
+          provider: 'ollama',
+          model: 'llama3.2',
+          inference: { temperature: 0.7, top_p: 0.9 },
+          budget: { maxCost: 5.0, maxIterations: 30, maxDepth: 2, maxTime: 300000 },
+          repl: { backend: 'auto', timeout: 30000 },
+          output: { format: 'text' },
+        } as any);
+
+        mockExecute.mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          trace: {},
+          usage: {},
+          warnings: [],
+        });
+
+        const program = new Command().addCommand(createRunCommand());
+        await program.parseAsync(['run', 'Task'], { from: 'user' });
+
+        // Verify RLM was created with inference options
+        expect(mockRLM).toHaveBeenCalledWith(
+          expect.objectContaining({
+            inference: { temperature: 0.7, top_p: 0.9 },
+          })
+        );
+      });
+    });
   });
 });

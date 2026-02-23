@@ -9,7 +9,9 @@
 import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { RLM, type SandboxFactory } from '@rlm/core';
-import { PDFParse } from 'pdf-parse';
+// pdf-parse loaded lazily — depends on pdfjs-dist which requires DOM APIs (DOMMatrix)
+// that don't exist in Node.js without @napi-rs/canvas native bindings
+type PDFParseModule = typeof import('pdf-parse');
 import { loadConfig, mergeConfig, resolveProfile, type Config } from '../config/index.js';
 import { detectBestBackend, createSandbox } from '../sandbox/index.js';
 import { createFormatter, type OutputFormat } from '../output/index.js';
@@ -29,6 +31,8 @@ interface RunOptions {
   maxCost?: number;
   maxDepth?: number;
   maxTime?: number;
+  temperature?: number;
+  topP?: number;
 }
 
 /**
@@ -84,6 +88,16 @@ export function createRunCommand(): Command {
       'Maximum execution time in milliseconds (default: 300000)',
       (v) => parseInt(v, 10)
     )
+    .option(
+      '--temperature <n>',
+      'Sampling temperature for LLM (0.0-2.0)',
+      parseFloat
+    )
+    .option(
+      '--top-p <n>',
+      'Nucleus sampling threshold (0.0-1.0)',
+      parseFloat
+    )
     .action(async (task: string, options: RunOptions) => {
       try {
         // Load config from file
@@ -110,6 +124,15 @@ export function createRunCommand(): Command {
           },
         };
 
+        // Apply CLI inference options (temperature, top_p override profile settings)
+        if (options.temperature !== undefined || options.topP !== undefined) {
+          cliOverrides.inference = {
+            ...resolvedConfig.inference,
+            ...(options.temperature !== undefined && { temperature: options.temperature }),
+            ...(options.topP !== undefined && { top_p: options.topP }),
+          };
+        }
+
         // Merge configs (CLI flags take precedence over resolved profile)
         const config = mergeConfig(resolvedConfig, cliOverrides);
 
@@ -131,8 +154,9 @@ export function createRunCommand(): Command {
           // Handle different file types
           const ext = resolvedPath.toLowerCase().split('.').pop();
           if (ext === 'pdf') {
-            // Extract text from PDF
+            // Extract text from PDF (lazy import to avoid DOMMatrix crash on non-PDF runs)
             console.error('[rlm] Extracting text from PDF...');
+            const { PDFParse } = await import('pdf-parse') as PDFParseModule;
             const dataBuffer = await readFile(resolvedPath);
             const parser = new PDFParse({ data: dataBuffer });
             const textResult = await parser.getText();
@@ -166,6 +190,7 @@ export function createRunCommand(): Command {
           provider: config.provider,
           model: config.model,
           subcallModel: config.subcallModel,
+          inference: config.inference,
           sandboxFactory,
           defaultBudget: {
             maxCost: config.budget.maxCost,

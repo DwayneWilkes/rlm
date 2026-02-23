@@ -7,7 +7,7 @@
  * @module @rlm/core/llm/adapters/ollama
  */
 
-import type { LLMAdapter, LLMRequest, LLMResponse } from '../../types.js';
+import type { LLMAdapter, LLMRequest, LLMResponse, OllamaInferenceOptions } from '../../types.js';
 
 /**
  * Default allowed hostnames for Ollama connections.
@@ -165,20 +165,46 @@ export class OllamaAdapter implements LLMAdapter {
    * @throws Error if the Ollama API returns an error
    */
   async complete(request: LLMRequest): Promise<LLMResponse> {
+    const inference = (request.inference ?? {}) as OllamaInferenceOptions;
+
+    // Build options object, filtering out undefined values
+    const options: Record<string, unknown> = {
+      num_predict: inference.num_predict ?? request.maxTokens ?? 4096,
+    };
+
+    // Add common inference options
+    if (inference.temperature !== undefined) options.temperature = inference.temperature;
+    if (inference.top_p !== undefined) options.top_p = inference.top_p;
+    if (inference.top_k !== undefined) options.top_k = inference.top_k;
+    if (inference.stop !== undefined) options.stop = inference.stop;
+
+    // Add Ollama-specific options
+    if (inference.num_ctx !== undefined) options.num_ctx = inference.num_ctx;
+    if (inference.repeat_penalty !== undefined) options.repeat_penalty = inference.repeat_penalty;
+    if (inference.repeat_last_n !== undefined) options.repeat_last_n = inference.repeat_last_n;
+    if (inference.seed !== undefined) options.seed = inference.seed;
+    if (inference.mirostat !== undefined) options.mirostat = inference.mirostat;
+
+    // Build request body
+    const body: Record<string, unknown> = {
+      model: request.model,
+      messages: [
+        { role: 'system', content: request.systemPrompt },
+        { role: 'user', content: request.userPrompt },
+      ],
+      stream: false,
+      options,
+    };
+
+    // Add keep_alive at top level (not in options)
+    if (inference.keep_alive !== undefined) {
+      body.keep_alive = inference.keep_alive;
+    }
+
     const response = await fetch(`${this.baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: request.model,
-        messages: [
-          { role: 'system', content: request.systemPrompt },
-          { role: 'user', content: request.userPrompt },
-        ],
-        stream: false,
-        options: {
-          num_predict: request.maxTokens ?? 4096,
-        },
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {

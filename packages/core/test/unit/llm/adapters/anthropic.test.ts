@@ -403,4 +403,124 @@ describe('AnthropicAdapter', () => {
       expect(Array.isArray(hints)).toBe(true);
     });
   });
+
+  describe('inference options', () => {
+    it('should pass temperature to API call', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: 'Response' }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
+
+      const adapter = new AnthropicAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'claude-sonnet-4-20250514',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          temperature: 0.7,
+        },
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          temperature: 0.7,
+        })
+      );
+    });
+
+    it('should pass top_p and top_k to API call', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: 'Response' }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
+
+      const adapter = new AnthropicAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'claude-sonnet-4-20250514',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          top_p: 0.9,
+          top_k: 40,
+        },
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          top_p: 0.9,
+          top_k: 40,
+        })
+      );
+    });
+
+    it('should pass stop sequences to API call', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: 'Response' }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
+
+      const adapter = new AnthropicAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'claude-sonnet-4-20250514',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          stop: ['END', '###'],
+        },
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stop_sequences: ['END', '###'],
+        })
+      );
+    });
+
+    it('should use inference.max_tokens over request.maxTokens', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: 'Response' }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
+
+      const adapter = new AnthropicAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'claude-sonnet-4-20250514',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        maxTokens: 1000,
+        inference: {
+          max_tokens: 2000,
+        },
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          max_tokens: 2000,
+        })
+      );
+    });
+
+    it('should not include undefined inference options', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: 'Response' }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
+
+      const adapter = new AnthropicAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'claude-sonnet-4-20250514',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          temperature: 0.5,
+        },
+      });
+
+      const callArgs = mockCreate.mock.calls[0][0];
+      expect(callArgs.temperature).toBe(0.5);
+      expect(callArgs).not.toHaveProperty('top_p');
+      expect(callArgs).not.toHaveProperty('top_k');
+      expect(callArgs).not.toHaveProperty('stop_sequences');
+    });
+  });
 });

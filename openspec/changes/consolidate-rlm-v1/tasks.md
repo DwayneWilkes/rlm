@@ -250,8 +250,8 @@ Paper: "chunking by Markdown headers" pattern
 
 ### Manual E2E Test (requires LLM connection)
 
-- [ ] Run repo analysis with `--profile research`
-- [ ] Confirm RLM uses `batch_rlm_query` for parallel sub-tasks
+- [x] Run repo analysis with `--profile local` (Ollama/qwen3) - SUCCESS: 39 iterations, $0 cost
+- [x] Confirm RLM uses `batch_rlm_query` for parallel sub-tasks - VERIFIED: 3 subcalls at depth 1
 - [x] Confirm native backend works end-to-end (rlm-claude-code.e2e.test.ts)
 
 ---

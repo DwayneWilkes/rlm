@@ -139,6 +139,20 @@ export interface RLMConfig {
    * ```
    */
   promptHints?: string[];
+  /**
+   * Provider-specific inference options (temperature, top_p, etc.).
+   * These options control the randomness and sampling behavior of the LLM.
+   *
+   * @example
+   * ```typescript
+   * inference: {
+   *   temperature: 0.7,
+   *   top_p: 0.9,
+   *   seed: 42,  // For reproducibility
+   * }
+   * ```
+   */
+  inference?: InferenceOptions;
 }
 
 /**
@@ -364,6 +378,186 @@ export interface CodeExecution {
 }
 
 // ============================================
+// INFERENCE OPTIONS
+// ============================================
+
+/**
+ * Common inference options shared across all LLM providers.
+ * These options control the randomness and focus of text generation.
+ */
+export interface CommonInferenceOptions {
+  /** Sampling temperature (0.0-2.0, default varies by model) */
+  temperature?: number;
+  /** Nucleus sampling threshold (0.0-1.0) */
+  top_p?: number;
+  /** Top-k sampling (positive integer) */
+  top_k?: number;
+  /** Stop sequences to halt generation */
+  stop?: string[];
+}
+
+/**
+ * Ollama-specific inference options.
+ * Extends common options with local model controls.
+ */
+export interface OllamaInferenceOptions extends CommonInferenceOptions {
+  /** Override context window size (tokens) */
+  num_ctx?: number;
+  /** Max tokens to generate */
+  num_predict?: number;
+  /** Penalize repeated tokens (0.0-2.0, default 1.1) */
+  repeat_penalty?: number;
+  /** Last N tokens for repeat penalty (default 64) */
+  repeat_last_n?: number;
+  /** Random seed for reproducibility (-1 = random) */
+  seed?: number;
+  /** How long to keep model loaded ("5m", "1h", "-1" = forever) */
+  keep_alive?: string;
+  /** Mirostat sampling mode (0, 1, or 2) */
+  mirostat?: number;
+  /** Enable thinking mode for supported models */
+  think?: boolean;
+}
+
+/**
+ * Anthropic-specific inference options.
+ */
+export interface AnthropicInferenceOptions extends CommonInferenceOptions {
+  /** Maximum output tokens (default: model-specific) */
+  max_tokens?: number;
+}
+
+/**
+ * OpenAI-specific inference options.
+ */
+export interface OpenAIInferenceOptions extends CommonInferenceOptions {
+  /** Penalize tokens by frequency (-2.0 to 2.0) */
+  frequency_penalty?: number;
+  /** Penalize tokens by presence (-2.0 to 2.0) */
+  presence_penalty?: number;
+  /** Maximum output tokens */
+  max_tokens?: number;
+  /** Random seed for reproducibility */
+  seed?: number;
+}
+
+/**
+ * Gemini-specific inference options.
+ */
+export interface GeminiInferenceOptions extends CommonInferenceOptions {
+  /** Maximum output tokens */
+  maxOutputTokens?: number;
+  /** Number of response candidates to generate */
+  candidateCount?: number;
+  /** Response MIME type ("text/plain", "application/json") */
+  responseMimeType?: string;
+  /** JSON schema for structured output */
+  responseSchema?: object;
+  /** Thinking level for reasoning ("low", "medium", "high") */
+  thinkingLevel?: 'low' | 'medium' | 'high';
+  /** Safety settings threshold */
+  safetySettings?: Array<{
+    category: string;
+    threshold: string;
+  }>;
+}
+
+/**
+ * Mistral-specific inference options.
+ */
+export interface MistralInferenceOptions extends CommonInferenceOptions {
+  /** Maximum tokens in completion */
+  max_tokens?: number;
+  /** Penalize repeated words by frequency (default 0) */
+  frequency_penalty?: number;
+  /** Penalize word/phrase repetition (default 0) */
+  presence_penalty?: number;
+  /** Random seed for deterministic output */
+  random_seed?: number;
+  /** Inject safety guidance before conversation (default false) */
+  safe_prompt?: boolean;
+  /** Number of completions per request */
+  n?: number;
+}
+
+/**
+ * Cohere-specific inference options.
+ * Uses p/k naming instead of top_p/top_k.
+ */
+export interface CohereInferenceOptions {
+  /** Sampling temperature (default 0.3) */
+  temperature?: number;
+  /** Nucleus sampling threshold (default 0.75, range 0.01-0.99) */
+  p?: number;
+  /** Top-k sampling (default 0, range 0-500, 0 = disabled) */
+  k?: number;
+  /** Maximum output tokens */
+  max_tokens?: number;
+  /** Reduce repetition by frequency (0.0-1.0) */
+  frequency_penalty?: number;
+  /** Reduce repetition by presence (0.0-1.0) */
+  presence_penalty?: number;
+  /** Random seed for reproducibility */
+  seed?: number;
+  /** Stop sequences (up to 5) */
+  stop_sequences?: string[];
+  /** Include log probabilities */
+  logprobs?: boolean;
+  /** Thinking/reasoning mode */
+  thinking?: {
+    type: 'enabled' | 'disabled';
+    /** Max tokens for thinking */
+    token_budget?: number;
+  };
+  /** Request priority (lower = higher priority) */
+  priority?: number;
+}
+
+/**
+ * Hugging Face-specific inference options.
+ */
+export interface HuggingFaceInferenceOptions extends CommonInferenceOptions {
+  /** Maximum new tokens to generate */
+  max_new_tokens?: number;
+  /** Repetition penalty (1.0 = no penalty) */
+  repetition_penalty?: number;
+  /** Frequency penalty (1.0 = no penalty) */
+  frequency_penalty?: number;
+  /** Random seed for reproducibility */
+  seed?: number;
+  /** Enable sampling (vs greedy decoding) */
+  do_sample?: boolean;
+  /** Typical decoding mass */
+  typical_p?: number;
+  /** Generate N sequences, return best */
+  best_of?: number;
+  /** Add watermark to output */
+  watermark?: boolean;
+  /** Grammar constraint (JSON schema or regex) */
+  grammar?: {
+    type: 'json' | 'regex' | 'json_schema';
+    value: object | string;
+  };
+  /** Truncate input to N tokens */
+  truncate?: number;
+  /** LoRA adapter ID */
+  adapter_id?: string;
+}
+
+/**
+ * Union type of all provider-specific inference options.
+ * Used in RLMConfig to specify inference parameters.
+ */
+export type InferenceOptions =
+  | OllamaInferenceOptions
+  | AnthropicInferenceOptions
+  | OpenAIInferenceOptions
+  | GeminiInferenceOptions
+  | MistralInferenceOptions
+  | CohereInferenceOptions
+  | HuggingFaceInferenceOptions;
+
+// ============================================
 // LLM ABSTRACTION
 // ============================================
 
@@ -404,6 +598,8 @@ export interface LLMRequest {
   userPrompt: string;
   /** Maximum tokens to generate (optional, provider-specific default) */
   maxTokens?: number;
+  /** Provider-specific inference options */
+  inference?: InferenceOptions;
 }
 
 /**

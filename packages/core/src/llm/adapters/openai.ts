@@ -8,7 +8,7 @@
  */
 
 import OpenAI from 'openai';
-import type { LLMAdapter, LLMRequest, LLMResponse } from '../../types.js';
+import type { LLMAdapter, LLMRequest, LLMResponse, OpenAIInferenceOptions } from '../../types.js';
 
 /**
  * Configuration for the OpenAI adapter.
@@ -75,14 +75,29 @@ export class OpenAIAdapter implements LLMAdapter {
    * @returns The LLM response with content, token counts, and calculated cost
    */
   async complete(request: LLMRequest): Promise<LLMResponse> {
-    const response = await this.client.chat.completions.create({
+    const inference = (request.inference ?? {}) as OpenAIInferenceOptions;
+
+    // Build API request params
+    const params: Record<string, unknown> = {
       model: request.model,
-      max_tokens: request.maxTokens ?? 4096,
+      max_tokens: inference.max_tokens ?? request.maxTokens ?? 4096,
       messages: [
         { role: 'system', content: request.systemPrompt },
         { role: 'user', content: request.userPrompt },
       ],
-    });
+    };
+
+    // Add inference options if defined
+    if (inference.temperature !== undefined) params.temperature = inference.temperature;
+    if (inference.top_p !== undefined) params.top_p = inference.top_p;
+    if (inference.frequency_penalty !== undefined) params.frequency_penalty = inference.frequency_penalty;
+    if (inference.presence_penalty !== undefined) params.presence_penalty = inference.presence_penalty;
+    if (inference.seed !== undefined) params.seed = inference.seed;
+    if (inference.stop !== undefined) params.stop = inference.stop;
+
+    const response = await this.client.chat.completions.create(
+      params as unknown as OpenAI.ChatCompletionCreateParamsNonStreaming
+    );
 
     // Extract content from response
     const content = response.choices[0]?.message?.content ?? '';

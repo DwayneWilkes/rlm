@@ -148,6 +148,7 @@ export class NativePythonSandbox implements Sandbox {
     resolve: (result: unknown) => void;
     reject: (error: Error) => void;
     timeoutHandle?: ReturnType<typeof setTimeout>;
+    timeoutDuration?: number;
   }> = new Map();
   private requestId = 0;
   private buffer = '';
@@ -399,8 +400,45 @@ export class NativePythonSandbox implements Sandbox {
   /**
    * Handle a bridge callback request from Python.
    */
+  /**
+   * Suspend timeouts on pending requests while processing bridge callbacks.
+   * Bridge callbacks (e.g., batch_rlm_query) can take minutes — the timeout
+   * should only fire if Python goes silent, not while we're doing work on
+   * its behalf.
+   */
+  private suspendPendingTimeouts(): void {
+    for (const [, pending] of this.pendingRequests) {
+      if (pending.timeoutHandle) {
+        clearTimeout(pending.timeoutHandle);
+        pending.timeoutHandle = undefined;
+      }
+    }
+  }
+
+  /**
+   * Resume timeouts on pending requests after a bridge callback completes.
+   */
+  private resumePendingTimeouts(): void {
+    for (const [id, pending] of this.pendingRequests) {
+      if (!pending.timeoutHandle && pending.timeoutDuration) {
+        pending.timeoutHandle = setTimeout(() => {
+          const p = this.pendingRequests.get(id);
+          if (p) {
+            this.pendingRequests.delete(id);
+            p.reject(new Error('Execution timeout'));
+            this.process?.kill();
+            this.process = null;
+          }
+        }, pending.timeoutDuration);
+      }
+    }
+  }
+
   private async handleBridgeRequest(request: JsonRpcRequest): Promise<void> {
     debug(' Bridge request:', request.method, request.params);
+
+    // Suspend execute timeout while processing bridge callback
+    this.suspendPendingTimeouts();
 
     let result: string | string[];
     let error: string | undefined;
@@ -441,6 +479,9 @@ export class NativePythonSandbox implements Sandbox {
     };
 
     this.writeToProcess(JSON.stringify(response) + '\n');
+
+    // Resume execute timeout now that bridge callback is done
+    this.resumePendingTimeouts();
   }
 
   /**
@@ -553,7 +594,7 @@ export class NativePythonSandbox implements Sandbox {
         }, timeout);
       }
 
-      this.pendingRequests.set(id, { resolve, reject, timeoutHandle });
+      this.pendingRequests.set(id, { resolve, reject, timeoutHandle, timeoutDuration: timeout });
 
       // Send request to Python
       this.writeToProcess(JSON.stringify(request) + '\n');

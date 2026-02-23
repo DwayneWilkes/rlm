@@ -209,6 +209,30 @@ export type { OpenAIConfig, ModelPricing as OpenAIModelPricing } from './llm/ada
  */
 export { ClaudeCodeAdapter } from './llm/adapters/claude-code.js';
 
+/**
+ * Gemini adapter for Google AI models.
+ */
+export { GeminiAdapter, GEMINI_PRICING } from './llm/adapters/gemini.js';
+export type { GeminiConfig, ModelPricing as GeminiModelPricing } from './llm/adapters/gemini.js';
+
+/**
+ * Mistral adapter for Mistral AI models.
+ */
+export { MistralAdapter, MISTRAL_PRICING } from './llm/adapters/mistral.js';
+export type { MistralConfig, ModelPricing as MistralModelPricing } from './llm/adapters/mistral.js';
+
+/**
+ * Cohere adapter for Cohere models.
+ */
+export { CohereAdapter, COHERE_PRICING } from './llm/adapters/cohere.js';
+export type { CohereConfig, ModelPricing as CohereModelPricing } from './llm/adapters/cohere.js';
+
+/**
+ * HuggingFace adapter for HuggingFace Inference API.
+ */
+export { HuggingFaceAdapter, HUGGINGFACE_PRICING } from './llm/adapters/huggingface.js';
+export type { HuggingFaceConfig, ModelPricing as HuggingFaceModelPricing } from './llm/adapters/huggingface.js';
+
 // ============================================
 // SANDBOX (for advanced use cases)
 // ============================================

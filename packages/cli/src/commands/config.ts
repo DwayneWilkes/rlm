@@ -74,6 +74,12 @@ export function createConfigCommand(): Command {
             if (profile.model) console.log(`      model: ${profile.model}`);
             if (profile.subcallProvider) console.log(`      subcallProvider: ${profile.subcallProvider}`);
             if (profile.subcallModel) console.log(`      subcallModel: ${profile.subcallModel}`);
+            if (profile.inference) {
+              const inferenceStr = Object.entries(profile.inference)
+                .map(([k, v]) => `${k}=${v}`)
+                .join(', ');
+              console.log(`      inference: ${inferenceStr}`);
+            }
           }
         }
       } catch (error) {

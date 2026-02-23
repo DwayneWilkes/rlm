@@ -70,6 +70,28 @@ export const OutputConfigSchema = z
 export type OutputConfig = z.infer<typeof OutputConfigSchema>;
 
 /**
+ * Common inference options schema (shared across all providers).
+ */
+export const CommonInferenceSchema = z.object({
+  /** Sampling temperature (0.0-2.0) */
+  temperature: z.number().min(0).max(2).optional(),
+  /** Nucleus sampling threshold (0.0-1.0) */
+  top_p: z.number().min(0).max(1).optional(),
+  /** Top-k sampling */
+  top_k: z.number().int().nonnegative().optional(),
+  /** Stop sequences to halt generation */
+  stop: z.array(z.string()).optional(),
+});
+
+/**
+ * Provider-specific inference options schema.
+ * Uses passthrough to allow any provider-specific options.
+ */
+export const InferenceConfigSchema = CommonInferenceSchema.passthrough().optional();
+
+export type InferenceConfig = z.infer<typeof InferenceConfigSchema>;
+
+/**
  * Profile configuration schema (used within profiles object).
  * All fields are optional since profiles can extend other profiles.
  */
@@ -86,6 +108,8 @@ export const ProfileSchema = z.object({
   subcallModel: z.string().optional(),
   /** Model-specific prompt hints for optimal RLM execution */
   promptHints: z.array(z.string()).optional(),
+  /** Provider-specific inference options (temperature, top_p, etc.) */
+  inference: InferenceConfigSchema,
   /** Budget limits */
   budget: BudgetConfigSchema.optional(),
   /** REPL/sandbox settings */
@@ -138,6 +162,8 @@ export const ConfigSchema = z
     subcallModel: z.string().optional(),
     /** Model-specific prompt hints for optimal RLM execution */
     promptHints: z.array(z.string()).optional(),
+    /** Provider-specific inference options (temperature, top_p, etc.) */
+    inference: InferenceConfigSchema,
     /** Budget limits */
     budget: BudgetConfigSchema,
     /** REPL/sandbox settings */

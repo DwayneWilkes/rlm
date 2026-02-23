@@ -319,4 +319,280 @@ describe('OllamaAdapter', () => {
       ).rejects.toThrow('Ollama error: 404 Not Found');
     });
   });
+
+  describe('inference options', () => {
+    it('should pass temperature to API options', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: { content: 'Response' },
+            prompt_eval_count: 10,
+            eval_count: 5,
+          }),
+      });
+
+      const adapter = new OllamaAdapter();
+      await adapter.complete({
+        model: 'qwen3:latest',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          temperature: 0.7,
+        },
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.options.temperature).toBe(0.7);
+    });
+
+    it('should pass top_p and top_k to API options', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: { content: 'Response' },
+            prompt_eval_count: 10,
+            eval_count: 5,
+          }),
+      });
+
+      const adapter = new OllamaAdapter();
+      await adapter.complete({
+        model: 'qwen3:latest',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          top_p: 0.95,
+          top_k: 40,
+        },
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.options.top_p).toBe(0.95);
+      expect(body.options.top_k).toBe(40);
+    });
+
+    it('should pass num_ctx to override context window', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: { content: 'Response' },
+            prompt_eval_count: 10,
+            eval_count: 5,
+          }),
+      });
+
+      const adapter = new OllamaAdapter();
+      await adapter.complete({
+        model: 'qwen3:latest',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          num_ctx: 32768,
+        },
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.options.num_ctx).toBe(32768);
+    });
+
+    it('should pass keep_alive at top level', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: { content: 'Response' },
+            prompt_eval_count: 10,
+            eval_count: 5,
+          }),
+      });
+
+      const adapter = new OllamaAdapter();
+      await adapter.complete({
+        model: 'qwen3:latest',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          keep_alive: '1h',
+        },
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.keep_alive).toBe('1h');
+    });
+
+    it('should pass seed for reproducibility', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: { content: 'Response' },
+            prompt_eval_count: 10,
+            eval_count: 5,
+          }),
+      });
+
+      const adapter = new OllamaAdapter();
+      await adapter.complete({
+        model: 'qwen3:latest',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          seed: 42,
+        },
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.options.seed).toBe(42);
+    });
+
+    it('should pass all Ollama-specific options together', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: { content: 'Response' },
+            prompt_eval_count: 10,
+            eval_count: 5,
+          }),
+      });
+
+      const adapter = new OllamaAdapter();
+      await adapter.complete({
+        model: 'qwen3:latest',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          temperature: 0.8,
+          top_p: 0.9,
+          top_k: 50,
+          num_ctx: 16384,
+          repeat_penalty: 1.2,
+          repeat_last_n: 128,
+          seed: 123,
+          mirostat: 2,
+          keep_alive: '30m',
+        },
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.options.temperature).toBe(0.8);
+      expect(body.options.top_p).toBe(0.9);
+      expect(body.options.top_k).toBe(50);
+      expect(body.options.num_ctx).toBe(16384);
+      expect(body.options.repeat_penalty).toBe(1.2);
+      expect(body.options.repeat_last_n).toBe(128);
+      expect(body.options.seed).toBe(123);
+      expect(body.options.mirostat).toBe(2);
+      expect(body.keep_alive).toBe('30m');
+    });
+
+    it('should not send undefined options', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: { content: 'Response' },
+            prompt_eval_count: 10,
+            eval_count: 5,
+          }),
+      });
+
+      const adapter = new OllamaAdapter();
+      await adapter.complete({
+        model: 'qwen3:latest',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          temperature: 0.5,
+          // top_p is not set
+        },
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.options.temperature).toBe(0.5);
+      expect(body.options).not.toHaveProperty('top_p');
+      expect(body.options).not.toHaveProperty('seed');
+    });
+
+    it('should override num_predict with inference.num_predict', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: { content: 'Response' },
+            prompt_eval_count: 10,
+            eval_count: 5,
+          }),
+      });
+
+      const adapter = new OllamaAdapter();
+      await adapter.complete({
+        model: 'qwen3:latest',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        maxTokens: 1000,
+        inference: {
+          num_predict: 2000,
+        },
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      // inference.num_predict takes precedence over maxTokens
+      expect(body.options.num_predict).toBe(2000);
+    });
+
+    it('should use maxTokens when inference.num_predict is not set', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: { content: 'Response' },
+            prompt_eval_count: 10,
+            eval_count: 5,
+          }),
+      });
+
+      const adapter = new OllamaAdapter();
+      await adapter.complete({
+        model: 'qwen3:latest',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        maxTokens: 1500,
+        inference: {
+          temperature: 0.5,
+        },
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.options.num_predict).toBe(1500);
+    });
+
+    it('should pass stop sequences', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: { content: 'Response' },
+            prompt_eval_count: 10,
+            eval_count: 5,
+          }),
+      });
+
+      const adapter = new OllamaAdapter();
+      await adapter.complete({
+        model: 'qwen3:latest',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          stop: ['END', '###'],
+        },
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.options.stop).toEqual(['END', '###']);
+    });
+  });
 });

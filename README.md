@@ -213,8 +213,11 @@ Options:
   --context <file>     Input context file (text, markdown, etc.)
   --provider <name>    LLM provider: ollama, anthropic, openai
   --model <name>       Model to use (e.g., llama3.2, claude-sonnet-4-20250514)
+  --profile <name>     Use a named profile from config file
   --format <type>      Output format: text, json, yaml
   --backend <type>     Sandbox backend: auto, native, daemon, pyodide
+  --temperature <n>    Sampling temperature (0.0-2.0)
+  --top-p <n>          Nucleus sampling threshold (0.0-1.0)
   --max-cost <n>       Maximum cost in dollars
   --max-iterations <n> Maximum iterations
   --verbose            Enable verbose output
@@ -225,9 +228,12 @@ Options:
 Create `.rlmrc.yaml` in your project or home directory:
 
 ```yaml
-# ~/.rlmrc.yaml
+# ~/.rlmrc.yaml - Flat configuration
 provider: ollama
 model: llama3.2
+inference:
+  temperature: 0.7     # Sampling temperature (0.0-2.0)
+  top_p: 0.9           # Nucleus sampling (0.0-1.0)
 budget:
   maxCost: 5.0
   maxIterations: 30
@@ -236,6 +242,47 @@ repl:
   backend: auto        # auto | native | daemon | pyodide
 output:
   format: text         # text | json | yaml
+```
+
+### Profile-Based Configuration
+
+For multiple environments, use profiles:
+
+```yaml
+# ~/.rlmrc.yaml - Profile-based configuration
+profiles:
+  local:
+    provider: ollama
+    model: llama3.2
+
+  cloud:
+    provider: anthropic
+    model: claude-sonnet-4-5-20250514
+    inference:
+      temperature: 0.7
+
+  creative:
+    provider: anthropic
+    model: claude-sonnet-4-5-20250514
+    inference:
+      temperature: 1.0
+      top_p: 0.95
+
+  deterministic:
+    provider: openai
+    model: gpt-4o
+    inference:
+      temperature: 0.0
+      seed: 42
+
+default: local
+```
+
+Use profiles with `--profile`:
+
+```bash
+rlm run "Analyze code" --profile cloud
+rlm run "Write creative story" --profile creative
 ```
 
 ### Sandbox Backends
@@ -283,8 +330,36 @@ interface RLMConfig {
     apiKey?: string;             // For cloud providers
   };
   subcallModel?: string;         // Model for recursive subcalls
+  inference?: InferenceOptions;  // Model generation parameters
   defaultBudget?: Partial<Budget>;
   repl?: Partial<REPLConfig>;
+}
+
+// Common inference options (all providers)
+interface CommonInferenceOptions {
+  temperature?: number;    // Sampling temperature (0.0-2.0)
+  top_p?: number;          // Nucleus sampling (0.0-1.0)
+  top_k?: number;          // Top-k sampling
+  stop?: string[];         // Stop sequences
+}
+
+// Provider-specific options extend CommonInferenceOptions
+interface OllamaInferenceOptions extends CommonInferenceOptions {
+  num_ctx?: number;        // Context window size
+  num_predict?: number;    // Max tokens to generate
+  seed?: number;           // Random seed for reproducibility
+  keep_alive?: string;     // Model memory lifetime
+}
+
+interface AnthropicInferenceOptions extends CommonInferenceOptions {
+  max_tokens?: number;     // Max tokens to generate
+}
+
+interface OpenAIInferenceOptions extends CommonInferenceOptions {
+  frequency_penalty?: number;  // Reduce repetition (-2.0 to 2.0)
+  presence_penalty?: number;   // Encourage new topics (-2.0 to 2.0)
+  seed?: number;               // Random seed for reproducibility
+  max_tokens?: number;         // Max tokens to generate
 }
 
 interface Budget {

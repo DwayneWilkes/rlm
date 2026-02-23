@@ -72,6 +72,62 @@ budget:
       await expect(loadConfig(configPath)).rejects.toThrow();
     });
 
+    it('loads inference options from YAML', async () => {
+      const configPath = path.join(tempDir, '.rlmrc.yaml');
+      await fs.writeFile(
+        configPath,
+        `provider: anthropic
+model: claude-sonnet-4-5
+inference:
+  temperature: 0.8
+  top_p: 0.95
+  top_k: 40
+`
+      );
+
+      const config = await loadConfig(configPath);
+
+      expect(config.provider).toBe('anthropic');
+      expect(config.inference).toEqual({
+        temperature: 0.8,
+        top_p: 0.95,
+        top_k: 40,
+      });
+    });
+
+    it('loads profile inference options from YAML', async () => {
+      const configPath = path.join(tempDir, '.rlmrc.yaml');
+      await fs.writeFile(
+        configPath,
+        `profiles:
+  creative:
+    provider: anthropic
+    model: claude-opus-4-5
+    inference:
+      temperature: 1.2
+      top_p: 0.9
+  deterministic:
+    provider: openai
+    model: gpt-4o
+    inference:
+      temperature: 0.0
+      seed: 42
+default: creative
+`
+      );
+
+      const config = await loadConfig(configPath);
+
+      expect(config.profiles?.creative?.inference).toEqual({
+        temperature: 1.2,
+        top_p: 0.9,
+      });
+      expect(config.profiles?.deterministic?.inference).toEqual({
+        temperature: 0.0,
+        seed: 42,
+      });
+    });
+
     it('emits warning when loading JS config file', async () => {
       const warnSpy = vi.spyOn(logger, 'warn');
       const configPath = path.join(tempDir, '.rlmrc.js');
@@ -405,6 +461,67 @@ model: llama3.2
       };
 
       expect(() => resolveProfile(config, 'a')).toThrow(/Circular extends/);
+    });
+
+    it('preserves inference options from profile', () => {
+      const config: Config = {
+        provider: 'ollama',
+        model: 'llama3.2',
+        budget: { maxCost: 5.0, maxIterations: 30, maxDepth: 2, maxTime: 300000 },
+        repl: { backend: 'auto', timeout: 30000 },
+        output: { format: 'text' },
+        profiles: {
+          creative: {
+            provider: 'anthropic',
+            model: 'claude-sonnet-4-5',
+            inference: {
+              temperature: 1.0,
+              top_p: 0.9,
+            },
+          },
+        },
+      };
+
+      const result = resolveProfile(config, 'creative');
+
+      expect(result.inference).toEqual({
+        temperature: 1.0,
+        top_p: 0.9,
+      });
+    });
+
+    it('merges inference options through extends chain', () => {
+      const config: Config = {
+        provider: 'ollama',
+        model: 'llama3.2',
+        budget: { maxCost: 5.0, maxIterations: 30, maxDepth: 2, maxTime: 300000 },
+        repl: { backend: 'auto', timeout: 30000 },
+        output: { format: 'text' },
+        profiles: {
+          base: {
+            provider: 'anthropic',
+            inference: {
+              temperature: 0.7,
+              top_k: 40,
+            },
+          },
+          derived: {
+            extends: 'base',
+            inference: {
+              temperature: 1.0, // Override
+              top_p: 0.95, // Add new
+            },
+          },
+        },
+      };
+
+      const result = resolveProfile(config, 'derived');
+
+      expect(result.inference).toEqual({
+        temperature: 1.0, // Overridden
+        top_k: 40, // From base
+        top_p: 0.95, // Added
+      });
     });
 
     it('preserves subcallProvider in resolved profile', () => {

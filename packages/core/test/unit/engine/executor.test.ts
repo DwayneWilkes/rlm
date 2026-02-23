@@ -131,6 +131,58 @@ describe('Executor', () => {
     });
   });
 
+  describe('inference warnings', () => {
+    it('should include inference warnings in result', async () => {
+      const adapter = createMockAdapter([
+        { content: 'FINAL(Done)', inputTokens: 100, outputTokens: 50, cost: 0.001 },
+      ]);
+      router.register('test', adapter);
+
+      const configWithIncompatible: RLMConfig = {
+        ...config,
+        inference: {
+          temperature: 0,
+          top_p: 0.9,
+        },
+      };
+
+      const executor = new Executor(configWithIncompatible, router);
+      const result = await executor.execute({
+        task: 'Test task',
+        context: 'Test context',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.warnings).toContain(
+        'temperature=0 enables greedy decoding; top_p will have no effect'
+      );
+    });
+
+    it('should not include warnings for compatible inference options', async () => {
+      const adapter = createMockAdapter([
+        { content: 'FINAL(Done)', inputTokens: 100, outputTokens: 50, cost: 0.001 },
+      ]);
+      router.register('test', adapter);
+
+      const configWithCompatible: RLMConfig = {
+        ...config,
+        inference: {
+          temperature: 0.7,
+          top_p: 0.9,
+        },
+      };
+
+      const executor = new Executor(configWithCompatible, router);
+      const result = await executor.execute({
+        task: 'Test task',
+        context: 'Test context',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.warnings).toHaveLength(0);
+    });
+  });
+
   describe('iteration loop', () => {
     it('should continue iterations until FINAL marker', async () => {
       const adapter = createMockAdapter([

@@ -8,7 +8,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import type { LLMAdapter, LLMRequest, LLMResponse } from '../../types.js';
+import type { LLMAdapter, LLMRequest, LLMResponse, AnthropicInferenceOptions } from '../../types.js';
 
 /**
  * Configuration for the Anthropic adapter.
@@ -157,16 +157,31 @@ export class AnthropicAdapter implements LLMAdapter {
    * @throws {AnthropicAPIError} When the API call fails
    */
   async complete(request: LLMRequest): Promise<LLMResponse> {
-    const maxTokens = getEffectiveMaxTokens(request.model, request.maxTokens);
+    const inference = (request.inference ?? {}) as AnthropicInferenceOptions;
 
-    let response;
+    // Use inference.max_tokens if set, otherwise fall back to request.maxTokens
+    const requestedMaxTokens = inference.max_tokens ?? request.maxTokens;
+    const maxTokens = getEffectiveMaxTokens(request.model, requestedMaxTokens);
+
+    // Build API request params
+    const params: Record<string, unknown> = {
+      model: request.model,
+      max_tokens: maxTokens,
+      system: request.systemPrompt,
+      messages: [{ role: 'user', content: request.userPrompt }],
+    };
+
+    // Add inference options if defined
+    if (inference.temperature !== undefined) params.temperature = inference.temperature;
+    if (inference.top_p !== undefined) params.top_p = inference.top_p;
+    if (inference.top_k !== undefined) params.top_k = inference.top_k;
+    if (inference.stop !== undefined) params.stop_sequences = inference.stop;
+
+    let response: Anthropic.Message;
     try {
-      response = await this.client.messages.create({
-        model: request.model,
-        max_tokens: maxTokens,
-        system: request.systemPrompt,
-        messages: [{ role: 'user', content: request.userPrompt }],
-      });
+      response = await this.client.messages.create(
+        params as unknown as Anthropic.MessageCreateParamsNonStreaming
+      );
     } catch (error) {
       throw new AnthropicAPIError(
         error instanceof Error ? error.message : String(error),

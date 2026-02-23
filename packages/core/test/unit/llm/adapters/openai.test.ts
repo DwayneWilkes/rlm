@@ -271,4 +271,170 @@ describe('OpenAIAdapter', () => {
       });
     });
   });
+
+  describe('inference options', () => {
+    it('should pass temperature to API call', async () => {
+      mockCreate.mockResolvedValue({
+        choices: [{ message: { content: 'Response' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+
+      const adapter = new OpenAIAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'gpt-4o',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          temperature: 0.7,
+        },
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          temperature: 0.7,
+        })
+      );
+    });
+
+    it('should pass frequency_penalty to API call', async () => {
+      mockCreate.mockResolvedValue({
+        choices: [{ message: { content: 'Response' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+
+      const adapter = new OpenAIAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'gpt-4o',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          frequency_penalty: 0.5,
+        },
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          frequency_penalty: 0.5,
+        })
+      );
+    });
+
+    it('should pass presence_penalty to API call', async () => {
+      mockCreate.mockResolvedValue({
+        choices: [{ message: { content: 'Response' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+
+      const adapter = new OpenAIAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'gpt-4o',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          presence_penalty: 0.3,
+        },
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          presence_penalty: 0.3,
+        })
+      );
+    });
+
+    it('should pass top_p and seed to API call', async () => {
+      mockCreate.mockResolvedValue({
+        choices: [{ message: { content: 'Response' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+
+      const adapter = new OpenAIAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'gpt-4o',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          top_p: 0.9,
+          seed: 42,
+        },
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          top_p: 0.9,
+          seed: 42,
+        })
+      );
+    });
+
+    it('should pass stop sequences to API call', async () => {
+      mockCreate.mockResolvedValue({
+        choices: [{ message: { content: 'Response' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+
+      const adapter = new OpenAIAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'gpt-4o',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          stop: ['END', '###'],
+        },
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stop: ['END', '###'],
+        })
+      );
+    });
+
+    it('should use inference.max_tokens over request.maxTokens', async () => {
+      mockCreate.mockResolvedValue({
+        choices: [{ message: { content: 'Response' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+
+      const adapter = new OpenAIAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'gpt-4o',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        maxTokens: 1000,
+        inference: {
+          max_tokens: 2000,
+        },
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          max_tokens: 2000,
+        })
+      );
+    });
+
+    it('should not include undefined inference options', async () => {
+      mockCreate.mockResolvedValue({
+        choices: [{ message: { content: 'Response' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+
+      const adapter = new OpenAIAdapter({ apiKey: 'test-key' });
+      await adapter.complete({
+        model: 'gpt-4o',
+        systemPrompt: 'sys',
+        userPrompt: 'user',
+        inference: {
+          temperature: 0.5,
+        },
+      });
+
+      const callArgs = mockCreate.mock.calls[0][0];
+      expect(callArgs.temperature).toBe(0.5);
+      expect(callArgs).not.toHaveProperty('frequency_penalty');
+      expect(callArgs).not.toHaveProperty('presence_penalty');
+      expect(callArgs).not.toHaveProperty('seed');
+    });
+  });
 });
