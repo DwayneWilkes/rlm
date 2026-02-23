@@ -6,7 +6,7 @@
  * @module templates/loader
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
@@ -31,14 +31,23 @@ export interface Template {
 /**
  * Resolve the templates directory path.
  * Works from both source (src/) and built (dist/) locations.
+ *
+ * tsup bundles into flat dist/chunk-*.js, so ../templates from dist/.
+ * Source is at src/templates/loader.ts, so ../../templates from src/templates/.
  */
 function getTemplatesDir(): string {
   const thisFile = fileURLToPath(import.meta.url);
   const thisDir = dirname(thisFile);
 
-  // From src/templates/loader.ts -> ../../templates/
-  // From dist/templates/loader.js -> ../../templates/
-  return join(thisDir, '..', '..', 'templates');
+  const candidates = [
+    join(thisDir, '..', '..', 'templates'), // from src/templates/ (dev/vitest)
+    join(thisDir, '..', 'templates'),       // from dist/ (tsup bundle)
+  ];
+
+  for (const dir of candidates) {
+    if (existsSync(dir)) return dir;
+  }
+  return candidates[0];
 }
 
 /**
