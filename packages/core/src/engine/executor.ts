@@ -394,6 +394,7 @@ ENVIRONMENT:
 - \`quote_match(pattern)\`: Return first match of pattern in context
 - \`chunk_by_headers(level=2)\`: Split context by Markdown headers (# for 1, ## for 2, etc.)
 - \`chunk_by_size(chars=50000, overlap=0)\`: Split context into fixed-size chunks
+- \`parse_academic_paper()\`: Parse context as academic paper → {sections, abstract, references_start, body, section_names, word_count}
 
 ACCURACY (CRITICAL):
 - Check the content of the 'context' variable to avoid hallucinations

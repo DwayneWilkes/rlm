@@ -336,6 +336,7 @@ class RlmSandbox:
         self._globals["quote_match"] = self._make_quote_match()
         self._globals["chunk_by_headers"] = self._make_chunk_by_headers()
         self._globals["chunk_by_size"] = self._make_chunk_by_size()
+        self._globals["parse_academic_paper"] = self._make_parse_academic_paper()
 
     def _make_chunk_text(self):
         """Create the chunk_text utility function."""
@@ -759,6 +760,124 @@ class RlmSandbox:
                 start = end - overlap if overlap > 0 else end
             return chunks
         return chunk_by_size
+
+    def _make_parse_academic_paper(self):
+        """Create the parse_academic_paper utility function."""
+        import re
+
+        # Academic section vocabulary
+        SECTION_NAMES = [
+            'Abstract', 'Introduction', 'Background', 'Related Work',
+            'Literature Review', 'Methods', 'Methodology', 'Approach',
+            'Materials and Methods', 'Experimental Setup', 'Experiments',
+            'Results', 'Findings', 'Analysis', 'Discussion',
+            'Conclusion', 'Conclusions', 'Summary', 'Future Work',
+            'Acknowledgements', 'Acknowledgments', 'References',
+            'Bibliography', 'Appendix', 'Appendices', 'Supplementary',
+        ]
+
+        # Build patterns from vocabulary
+        name_pattern = '|'.join(re.escape(n) for n in SECTION_NAMES)
+        name_pattern_upper = '|'.join(re.escape(n.upper()) for n in SECTION_NAMES)
+
+        # Detection patterns ordered by specificity
+        patterns = [
+            # Numbered: "1. Introduction" or "1 Introduction"
+            re.compile(
+                r'^\d+\.?\s+(' + name_pattern + r')\s*$',
+                re.MULTILINE | re.IGNORECASE
+            ),
+            # Markdown: "## Introduction"
+            re.compile(
+                r'^#{1,3}\s+(' + name_pattern + r')\s*$',
+                re.MULTILINE | re.IGNORECASE
+            ),
+            # ALL CAPS: "INTRODUCTION"
+            re.compile(
+                r'^(' + name_pattern_upper + r')\s*$',
+                re.MULTILINE
+            ),
+            # Mixed: "1 INTRODUCTION"
+            re.compile(
+                r'^\d+\s+(' + name_pattern_upper + r')\s*$',
+                re.MULTILINE
+            ),
+        ]
+
+        def parse_academic_paper() -> dict:
+            """Parse context as an academic paper into structured sections.
+
+            Returns dict with:
+              sections: list of {name, content, start, end}
+              abstract: str
+              references_start: int (-1 if not found)
+              body: str (text without references)
+              section_names: list[str]
+              word_count: int (excluding references)
+            """
+            context = self._globals.get("context", "")
+
+            # Try each pattern until one finds sections
+            best_matches = []
+            for pattern in patterns:
+                matches = list(pattern.finditer(context))
+                if len(matches) > len(best_matches):
+                    best_matches = matches
+
+            # Build sections from matches
+            sections = []
+            for i, match in enumerate(best_matches):
+                name = match.group(1) if match.lastindex else match.group(0)
+                name = name.strip()
+                start = match.start()
+                end = best_matches[i + 1].start() if i + 1 < len(best_matches) else len(context)
+                content = context[match.end():end].strip()
+                sections.append({
+                    'name': name,
+                    'content': content,
+                    'start': start,
+                    'end': end,
+                })
+
+            # Extract abstract
+            abstract = ''
+            for sec in sections:
+                if sec['name'].lower() == 'abstract':
+                    abstract = sec['content']
+                    break
+            # Fallback: look for "Abstract" followed by text before first section
+            if not abstract and not sections:
+                abs_match = re.search(
+                    r'(?:^|\n)\s*(?:abstract)[:\s]*\n(.*?)(?=\n\s*(?:introduction|1\.|#))',
+                    context, re.IGNORECASE | re.DOTALL
+                )
+                if abs_match:
+                    abstract = abs_match.group(1).strip()
+
+            # Find references start
+            references_start = -1
+            for sec in sections:
+                if sec['name'].lower() in ('references', 'bibliography'):
+                    references_start = sec['start']
+                    break
+
+            # Body text (without references)
+            body = context[:references_start] if references_start >= 0 else context
+
+            # Word count (excluding references)
+            word_count = len(body.split())
+
+            section_names = [s['name'] for s in sections]
+
+            return {
+                'sections': sections,
+                'abstract': abstract,
+                'references_start': references_start,
+                'body': body,
+                'section_names': section_names,
+                'word_count': word_count,
+            }
+        return parse_academic_paper
 
     def get_variable(self, name: str) -> Dict[str, Any]:
         """
