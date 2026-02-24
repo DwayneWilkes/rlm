@@ -1,141 +1,73 @@
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
-
-These instructions are for AI assistants working in this project.
-
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
-
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
-
-Keep this managed block so 'openspec update' can refresh the instructions.
-
-<!-- OPENSPEC:END -->
-
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Project Overview
-
-RLM (Recursive Language Model) is an AI-powered task decomposition and research system. It executes tasks iteratively using LLMs with a Python REPL sandbox, supporting recursive sub-calls for complex analysis.
-
-## Build & Development Commands
+## Build & Test
 
 ```bash
-# Install dependencies
-pnpm install
+cargo build --release        # release binary at target/release/rlm
+cargo test                   # 156 tests (145 unit + 11 integration)
+cargo clippy                 # must pass with zero warnings
+```
 
-# Build all packages
-pnpm build
+## CLI
 
-# Development mode (all packages in parallel)
-pnpm dev
-
-# Run all tests (654 tests: 362 core + 292 CLI)
-pnpm test
-
-# Run tests for a specific package
-pnpm --filter @rlm/core test
-pnpm --filter @rlm/cli test
-
-# Run a specific test file
-pnpm --filter @rlm/core test src/budget/controller.test.ts
-
-# Run tests matching a pattern
-pnpm --filter @rlm/core test -t "budget"
-
-# Watch mode for tests
-pnpm --filter @rlm/core test --watch
-
-# Lint and typecheck
-pnpm lint
-pnpm typecheck
-
-# CLI commands (after build)
-node packages/cli/dist/bin/rlm.js --help
+```bash
+rlm serve                                    # MCP server (default)
+rlm run "task" --context file.txt            # execute task
+rlm run "task" --mode direct --format json   # direct mode, JSON output
+rlm templates                                # list prompt templates
+rlm config show                              # display resolved config
 ```
 
 ## Architecture
 
-### Packages
+Single Rust binary — MCP server + CLI. Implements Zhang et al. (2025) iterative LLM + REPL algorithm.
 
-- **@rlm/core** - Core library with RLM execution engine, sandboxes, LLM adapters
-- **@rlm/cli** - Command-line interface with config files, daemon mode, output formatters
+**Execution flow**: task + context → mode resolution (direct/iterative/auto) → LLM call(s) → optional Python REPL loop → FINAL marker → result.
 
-### Core Components Data Flow
+**Modules** (`src/`):
 
-1. User provides task + context string + budget config (via CLI or API)
-2. **loadContext()** prepares context (token estimation, content type detection)
-3. **SandboxFactory** selects backend: daemon (~5ms) → native (~50ms) → pyodide (~300ms)
-4. **Sandbox** initializes with context, provides `llm_query()`, `rlm_query()`, `batch_llm_query()` bridges
-5. **Executor** runs iteration loop: prompt → LLM response → parse code → execute → capture results
-6. **BudgetController** enforces limits on cost, tokens, time, recursion depth, iterations
-7. Loop continues until FINAL marker or budget exhaustion
+| Module | Purpose |
+|--------|---------|
+| `types.rs` | All types, traits (`LlmClient`, `Sandbox`, `Executor`), enums |
+| `config.rs` | YAML config loading, profile inheritance, CLI overrides |
+| `engine/parser.rs` | Response parser: ` ```repl``` ` blocks, `FINAL()`, `FINAL_VAR()` |
+| `engine/mode.rs` | Auto mode: direct if context < 70% model limit |
+| `engine/direct.rs` | Single LLM call executor |
+| `engine/iterative.rs` | REPL loop executor (paper algorithm) |
+| `llm/{anthropic,openai,claude_code}.rs` | LLM provider adapters |
+| `llm/router.rs` | Primary + subcall provider routing |
+| `llm/cache.rs` | SHA-256 content-hash response cache |
+| `sandbox/python.rs` | Python subprocess sandbox (stdin/stdout JSON pipes) |
+| `prompt/mod.rs` | System prompt builder with model hints |
+| `prompt/templates.rs` | YAML template loader (builtins via `include_str!`) |
+| `protocol.rs` + `server.rs` | MCP JSON-RPC server (canonical pattern) |
+| `tools/execute.rs` | `rlm_execute` MCP tool |
+| `tools/templates.rs` | `rlm_templates` MCP tool |
 
-### Key Types (packages/core/src/types.ts)
+## Config
 
-- `RLMConfig` - Main execution configuration
-- `RLMResult` - Execution result with output, trace, usage stats
-- `Budget` - Cost/token/time/depth/iteration limits
-- `ExecutionTrace` - Full trace of iterations and subcalls
-- `ExecuteOptions` - Task, context, budget overrides, hooks
+YAML config at `.rlmrc.yaml` with named profiles:
 
-## Testing Requirements
+```yaml
+profiles:
+  default:
+    provider:
+      type: anthropic        # anthropic | openai | claude-code
+      model: claude-sonnet-4-20250514
+    budget:
+      max_iterations: 50
+      max_time_seconds: 300
+```
 
-**TDD is mandatory.** All coding work must follow Red-Green-Refactor:
-1. Write a failing test first
-2. Write minimal code to pass
-3. Refactor while tests pass
+Provider configs require `type` field as object (not bare string).
 
-- Target 100% coverage on new code
-- Unit tests colocated with source files (`*.test.ts`)
-- Integration tests in `tests/integration/`
-- Test fixtures in `tests/fixtures/`
+## Conventions
 
-## Code Style
-
-### File Size Limits (LLM-friendly)
-
-| Category | Lines | Action |
-|----------|-------|--------|
-| Ideal | 200-300 | Target for new files |
-| Acceptable | 300-400 | Monitor, consider splitting |
-| Maximum | 400 | Triggers refactor discussion |
-| Hard Limit | 500 | Must split before merge |
-
-### Naming Conventions
-
-- Files: `kebab-case.ts`
-- Classes/Types/Interfaces: `PascalCase`
-- Functions/methods: `camelCase`
-- Constants: `UPPER_SNAKE_CASE`
-
-### Import Order
-
-1. Node.js built-ins (`node:fs/promises`)
-2. External dependencies (`zod`, `@anthropic-ai/sdk`)
-3. Internal packages (`@rlm/core`)
-4. Relative imports (`./code-parser.js`)
-
-### TypeScript
-
-- Prefer type inference over explicit annotations
-- Use `type` for data shapes, `interface` for extension
-- Explicit return types for public APIs only
-- JSDoc for public APIs only, skip for self-documenting code
-
-## Tech Stack
-
-- **Package Manager**: pnpm 9.15.0+
-- **Runtime**: Node.js 20+ / Bun
-- **Build**: tsup
-- **Testing**: Vitest
-- **LLM SDKs**: @anthropic-ai/sdk, openai
-- **Python Runtime**: Pyodide (WASM), Native Python (subprocess), Daemon (worker pool)
-- **CLI**: Commander.js, cosmiconfig, Zod
+- **TDD mandatory**: write failing test first, then implement
+- **No `#[allow(dead_code)]`**: delete unused code
+- **Clippy clean**: zero warnings required
+- **Conventional commits**: `feat(rlm):`, `fix(rlm):`, `test(rlm):`
+- Unit tests in `#[cfg(test)]` modules within each source file
+- Integration tests in `tests/`
+- Built-in templates compiled via `include_str!` from `templates/`
+- Python harness compiled via `include_str!` from `src/sandbox/harness.py`

@@ -1,85 +1,87 @@
 # RLM Configuration
-# Supports multiple profiles for different use cases
+# Supports multiple profiles with `extends` inheritance
 
 profiles:
   # Local development with Ollama (free, private)
   local:
-    provider: ollama
-    model: qwen3:latest
+    provider:
+      type: openai
+      model: qwen3:latest
+      base_url: http://localhost:11434/v1
     budget:
-      maxCost: 999  # Effectively unlimited (Ollama is free)
-      maxIterations: 50
-      maxTime: 300000
+      max_cost: 999.0
+      max_iterations: 50
+      max_time_seconds: 300
 
-  # Claude Code provider (uses subscription auth)
+  # Claude Code provider (uses subscription auth, no API key)
   claude-code:
-    provider: claude-code
-    model: claude-opus-4-6
-    subcallModel: claude-sonnet-4-6
+    provider:
+      type: claude-code
+      model: claude-opus-4-6
+    subcall_provider:
+      type: claude-code
+      model: claude-sonnet-4-6
     budget:
-      maxCost: 5.0
-      maxIterations: 30
-      maxTime: 300000
+      max_cost: 5.0
+      max_iterations: 30
+      max_time_seconds: 300
 
   # Cloud provider with API key
   cloud:
-    provider: anthropic
-    model: claude-sonnet-4-6
-    subcallProvider: anthropic
-    subcallModel: claude-haiku-4-5-20251001
+    provider:
+      type: anthropic
+      model: claude-sonnet-4-6
+    subcall_provider:
+      type: anthropic
+      model: claude-haiku-4-5-20251001
     budget:
-      maxCost: 5.00
-      maxIterations: 50
-      maxTime: 300000
+      max_cost: 5.0
+      max_iterations: 50
+      max_time_seconds: 300
 
   # Hybrid: Cloud root model + local subcalls (cost-effective)
   hybrid:
-    provider: anthropic
-    model: claude-sonnet-4-6
-    subcallProvider: ollama
-    subcallModel: qwen3:latest
+    provider:
+      type: anthropic
+      model: claude-sonnet-4-6
+    subcall_provider:
+      type: openai
+      model: qwen3:latest
+      base_url: http://localhost:11434/v1
     budget:
-      maxCost: 2.50
-      maxIterations: 50
-      maxTime: 300000
+      max_cost: 2.50
+      max_iterations: 50
+      max_time_seconds: 300
 
   # Research: High limits for deep analysis
   research:
     extends: cloud
-    model: claude-opus-4-6
+    provider:
+      type: anthropic
+      model: claude-opus-4-6
     budget:
-      maxCost: 10.00
-      maxIterations: 100
-      maxTime: 600000  # 10 minutes
+      max_cost: 10.0
+      max_iterations: 100
+      max_time_seconds: 600
 
   # Creative: Higher temperature for varied outputs
   creative:
-    provider: anthropic
-    model: claude-sonnet-4-6
+    provider:
+      type: anthropic
+      model: claude-sonnet-4-6
     inference:
       temperature: 1.0
       top_p: 0.95
     budget:
-      maxCost: 5.00
+      max_cost: 5.0
 
   # Deterministic: Low temperature for consistent results
   deterministic:
-    provider: openai
-    model: gpt-4o
+    provider:
+      type: openai
+      model: gpt-4o
     inference:
       temperature: 0.0
       seed: 42
     budget:
-      maxCost: 5.00
-
-# Default profile when --profile is not specified
-default: claude-code
-
-# REPL configuration
-repl:
-  backend: auto  # auto|native|pyodide|daemon
-  timeout: 30000
-
-# Output configuration
-output:
-  format: text  # text|json|yaml
+      max_cost: 5.0
