@@ -148,7 +148,16 @@ fn cmd_run(
     )?;
 
     // Resolve mode
-    let mode = resolve_mode(config.mode, &context, config.provider.model());
+    let mut mode = resolve_mode(config.mode, &context, config.provider.model());
+
+    // claude-code provider only supports direct mode
+    if mode == Mode::Iterative && matches!(config.provider, ProviderConfig::ClaudeCode { .. }) {
+        eprintln!(
+            "Warning: claude-code provider does not support iterative mode — \
+             falling back to direct mode. Use anthropic or openai provider for iterative."
+        );
+        mode = Mode::Direct;
+    }
 
     // Build LLM client
     let client = rlm::tools::execute::build_client_from_config(&config)?;

@@ -298,4 +298,54 @@ mod tests {
 
         sb.destroy().unwrap();
     }
+
+    #[test]
+    fn sandbox_read_chunk() {
+        let mut sb = match make_sandbox() {
+            Ok(sb) => sb,
+            Err(e) => {
+                eprintln!("Skipping test (python3 not available): {}", e);
+                return;
+            }
+        };
+
+        sb.init("abcdefghijklmnopqrstuvwxyz").unwrap();
+
+        // read_chunk returns a slice of context
+        let resp = sb.execute("print(read_chunk(0, 5))").unwrap();
+        assert!(resp.ok, "read_chunk failed: {:?}", resp.error);
+        assert_eq!(resp.stdout.trim(), "abcde");
+
+        // read_chunk with offset
+        let resp = sb.execute("print(read_chunk(10, 15))").unwrap();
+        assert!(resp.ok);
+        assert_eq!(resp.stdout.trim(), "klmno");
+
+        // read_chunk past end clamps
+        let resp = sb.execute("print(read_chunk(24, 100))").unwrap();
+        assert!(resp.ok);
+        assert_eq!(resp.stdout.trim(), "yz");
+
+        sb.destroy().unwrap();
+    }
+
+    #[test]
+    fn sandbox_context_len() {
+        let mut sb = match make_sandbox() {
+            Ok(sb) => sb,
+            Err(e) => {
+                eprintln!("Skipping test (python3 not available): {}", e);
+                return;
+            }
+        };
+
+        sb.init("hello world").unwrap();
+
+        // context_len() should be available
+        let resp = sb.execute("print(context_len())").unwrap();
+        assert!(resp.ok, "context_len failed: {:?}", resp.error);
+        assert_eq!(resp.stdout.trim(), "11");
+
+        sb.destroy().unwrap();
+    }
 }

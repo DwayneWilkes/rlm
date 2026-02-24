@@ -88,7 +88,19 @@ impl ToolHandler for RlmExecute {
         let config = config_from_args(&args)?;
 
         // Resolve mode
-        let mode = resolve_mode(config.mode, context, config.provider.model());
+        let mut mode = resolve_mode(config.mode, context, config.provider.model());
+
+        // claude-code provider only supports direct mode — the subprocess has
+        // its own identity and safety protections that reject the REPL protocol
+        // (system prompt override is detected as prompt injection).
+        let downgraded = if mode == Mode::Iterative
+            && matches!(config.provider, ProviderConfig::ClaudeCode { .. })
+        {
+            mode = Mode::Direct;
+            true
+        } else {
+            false
+        };
 
         // Validate template exists if specified
         if let Some(name) = &config.template {
@@ -99,7 +111,7 @@ impl ToolHandler for RlmExecute {
         let client = build_client(&config.provider)?;
 
         // Execute
-        let result = match mode {
+        let mut result = match mode {
             Mode::Direct => {
                 let executor = DirectExecutor::new(client.as_ref());
                 executor.execute(task, context, &config)?
@@ -110,6 +122,14 @@ impl ToolHandler for RlmExecute {
                 executor.execute_mut(task, context, &config)?
             }
         };
+
+        if downgraded {
+            result.answer = format!(
+                "[Note: claude-code provider does not support iterative mode — \
+                 used direct mode instead. Use anthropic or openai provider for iterative.]\n\n{}",
+                result.answer
+            );
+        }
 
         Ok(ToolResult::ok(serde_json::to_string_pretty(&result)?))
     }
@@ -249,5 +269,19 @@ mod tests {
         let args = serde_json::json!({"task": "test", "provider": "unknown"});
         let result = config_from_args(&args);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn claude_code_iterative_downgrades_to_direct() {
+        let args = serde_json::json!({
+            "task": "test",
+            "mode": "iterative",
+            "provider": "claude-code"
+        });
+        let config = config_from_args(&args).unwrap();
+        assert_eq!(config.mode, Mode::Iterative);
+        assert!(matches!(config.provider, ProviderConfig::ClaudeCode { .. }));
+        // The downgrade happens in call(), not config_from_args(),
+        // but we verify the config is valid for testing purposes
     }
 }

@@ -137,11 +137,29 @@ def parse_academic_paper(text):
 
 # ── Command handlers ──
 
+def _make_read_chunk(ctx):
+    """Create a read_chunk closure bound to the given context string."""
+    def read_chunk(start, end):
+        """Return context[start:end]. Use to read large contexts in slices."""
+        return ctx[start:end]
+    return read_chunk
+
+
+def _make_context_len(ctx):
+    """Create a context_len closure bound to the given context string."""
+    def context_len():
+        """Return len(context) without printing the whole thing."""
+        return len(ctx)
+    return context_len
+
+
 def handle_init(context):
     """Initialize the sandbox with the context variable."""
     _namespace.clear()
     _namespace["context"] = context
     _namespace["parse_academic_paper"] = parse_academic_paper
+    _namespace["read_chunk"] = _make_read_chunk(context)
+    _namespace["context_len"] = _make_context_len(context)
     _namespace["print"] = print  # ensure print is available
     return {"ok": True}
 

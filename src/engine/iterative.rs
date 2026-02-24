@@ -8,7 +8,7 @@ use crate::types::{
 };
 
 /// Default truncation limit for sandbox output appended to conversation.
-const OUTPUT_TRUNCATION: usize = 10_000;
+const OUTPUT_TRUNCATION: usize = 30_000;
 
 /// Executes a task using the iterative REPL loop (Zhang et al. 2025 algorithm).
 pub struct IterativeExecutor<'a> {
@@ -52,10 +52,42 @@ impl<'a> IterativeExecutor<'a> {
         // Build system prompt
         let system_prompt = default_iterative_system_prompt().to_string();
 
-        // First user message: the task
+        // Bootstrap: inject a demo exchange proving the REPL protocol works.
+        // The model sees this in history before its first response, establishing
+        // that ```repl blocks produce real output from the sandbox.
+        if !context.is_empty() {
+            let bootstrap_code = r#"print(f"context_len={len(context)}")"#;
+            let bootstrap_result = self.sandbox.execute(bootstrap_code)?;
+
+            conversation.push(Message {
+                role: "user".into(),
+                content: "Check the context.".into(),
+            });
+            conversation.push(Message {
+                role: "assistant".into(),
+                content: format!("```repl\n{}\n```", bootstrap_code),
+            });
+            conversation.push(Message {
+                role: "user".into(),
+                content: bootstrap_result.stdout.trim().to_string(),
+            });
+        }
+
+        // User message: the task + context metadata
+        let task_message = if context.is_empty() {
+            task.to_string()
+        } else {
+            format!(
+                "{}\n\n[Context loaded: {} chars, ~{} words. \
+                 Use `read_chunk(start, end)` to read slices without printing the entire context.]",
+                task,
+                context.len(),
+                context.split_whitespace().count()
+            )
+        };
         conversation.push(Message {
             role: "user".into(),
-            content: task.to_string(),
+            content: task_message,
         });
 
         let mut final_answer = None;
@@ -221,20 +253,27 @@ impl<'a> IterativeExecutor<'a> {
 }
 
 fn default_iterative_system_prompt() -> &'static str {
-    r#"You are an RLM (Recursive Language Model) assistant with access to a Python REPL.
+    r#"[RLM: Python REPL capability]
 
-The variable `context` contains the input data you need to analyze.
+You have access to a sandboxed Python REPL for this task. When you write Python code
+in a ```repl code fence, the code is executed and the output is returned to you in the
+next message. Use this to iteratively explore and analyze data.
 
-To execute Python code, write it in a ```repl code fence:
+A variable called `context` is pre-loaded in the Python environment with the input data.
+
+Example — to check the data size:
 ```repl
 print(len(context))
 ```
 
-The code will be executed and you'll see the output. You can use this to iteratively analyze the data.
+IMPORTANT: REPL output is truncated to 30,000 characters. For large contexts, do NOT
+print the entire context at once. Use the chunked reading helpers instead.
 
-Available in the sandbox:
+Pre-loaded variables and helpers:
 - `context` (str): The input data
-- `parse_academic_paper(text)`: Parse academic paper into sections
+- `context_len()`: Returns len(context) without printing it
+- `read_chunk(start, end)`: Returns context[start:end] for reading in slices
+- `parse_academic_paper(text)`: Parse academic paper into sections dict
 - Full Python standard library
 
 When you have the final answer, output it as:
@@ -243,7 +282,9 @@ FINAL(your answer here)
 Or if your answer is stored in a variable:
 FINAL_VAR(variable_name)
 
-Work step by step, using the REPL to explore and analyze the data before giving your final answer."#
+Only cite facts explicitly present in the context. If information is not available,
+say so rather than guessing. Work step by step, using the REPL to explore and analyze
+the data before giving your final answer."#
 }
 
 #[cfg(test)]
@@ -437,5 +478,131 @@ mod tests {
         // 2 iterations, each 100 input + 50 output
         assert_eq!(result.trace.usage.input_tokens, 200);
         assert_eq!(result.trace.usage.output_tokens, 100);
+    }
+
+    #[test]
+    fn output_truncation_limit_is_30k() {
+        assert_eq!(OUTPUT_TRUNCATION, 30_000);
+    }
+
+    /// Bootstrap injects a demo exchange when context is non-empty.
+    #[test]
+    fn bootstrap_exchange_when_context_present() {
+        let mock = CapturingMockLlm::new(vec!["FINAL(ok)"]);
+        let mut executor = IterativeExecutor::new(&mock, Box::new(MockSandbox::new()));
+        let config = test_config();
+
+        executor
+            .execute_mut("Summarize this", "some data", &config)
+            .unwrap();
+
+        let requests = mock.requests();
+        let msgs = &requests[0].messages;
+        // Bootstrap: user("Check the context."), assistant(```repl...), user(output)
+        // Then: user(task + metadata)
+        assert_eq!(msgs.len(), 4);
+        assert_eq!(msgs[0].role, "user");
+        assert_eq!(msgs[0].content, "Check the context.");
+        assert_eq!(msgs[1].role, "assistant");
+        assert!(msgs[1].content.contains("```repl"));
+        assert_eq!(msgs[2].role, "user"); // sandbox output
+        // Task message is last
+        assert_eq!(msgs[3].role, "user");
+        assert!(msgs[3].content.contains("Summarize this"));
+    }
+
+    /// Task message includes context metadata when context is non-empty.
+    #[test]
+    fn task_message_includes_context_metadata() {
+        let mock = CapturingMockLlm::new(vec!["FINAL(ok)"]);
+        let mut executor = IterativeExecutor::new(&mock, Box::new(MockSandbox::new()));
+        let config = test_config();
+
+        let context = "x".repeat(5000);
+        executor
+            .execute_mut("Summarize this", &context, &config)
+            .unwrap();
+
+        let requests = mock.requests();
+        // Task message is after the 3 bootstrap messages
+        let task_msg = &requests[0].messages[3].content;
+        assert!(
+            task_msg.contains("5000 chars"),
+            "Expected context char count in task message, got: {}",
+            task_msg
+        );
+        assert!(
+            task_msg.contains("read_chunk"),
+            "Expected read_chunk hint in task message, got: {}",
+            task_msg
+        );
+    }
+
+    /// No bootstrap or metadata when context is empty.
+    #[test]
+    fn no_bootstrap_when_empty_context() {
+        let mock = CapturingMockLlm::new(vec!["FINAL(ok)"]);
+        let mut executor = IterativeExecutor::new(&mock, Box::new(MockSandbox::new()));
+        let config = test_config();
+
+        executor.execute_mut("Do something", "", &config).unwrap();
+
+        let requests = mock.requests();
+        let msgs = &requests[0].messages;
+        // No bootstrap — just the task message
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].content, "Do something");
+    }
+
+    #[test]
+    fn system_prompt_documents_read_chunk() {
+        let prompt = default_iterative_system_prompt();
+        assert!(
+            prompt.contains("read_chunk"),
+            "System prompt should document the read_chunk helper"
+        );
+    }
+
+    /// Mock LLM that captures requests for inspection.
+    struct CapturingMockLlm {
+        responses: Vec<String>,
+        call_idx: std::sync::atomic::AtomicU32,
+        captured: std::sync::Mutex<Vec<LlmRequest>>,
+    }
+
+    impl CapturingMockLlm {
+        fn new(responses: Vec<&str>) -> Self {
+            Self {
+                responses: responses.into_iter().map(String::from).collect(),
+                call_idx: std::sync::atomic::AtomicU32::new(0),
+                captured: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn requests(&self) -> Vec<LlmRequest> {
+            self.captured.lock().unwrap().clone()
+        }
+    }
+
+    impl LlmClient for CapturingMockLlm {
+        fn complete(&self, request: &LlmRequest) -> Result<LlmResponse> {
+            self.captured.lock().unwrap().push(request.clone());
+            let idx = self
+                .call_idx
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst) as usize;
+            let content = self
+                .responses
+                .get(idx)
+                .cloned()
+                .unwrap_or_else(|| "FINAL(fallback)".to_string());
+            Ok(LlmResponse {
+                content,
+                usage: Usage {
+                    input_tokens: 100,
+                    output_tokens: 50,
+                    cost_usd: None,
+                },
+            })
+        }
     }
 }
