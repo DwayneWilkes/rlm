@@ -4,7 +4,7 @@
 
 ```bash
 cargo build --release        # release binary at target/release/rlm
-cargo test                   # 156 tests (145 unit + 11 integration)
+cargo test                   # unit + integration tests
 cargo clippy                 # must pass with zero warnings
 ```
 
@@ -60,6 +60,8 @@ profiles:
 ```
 
 Provider configs require `type` field as object (not bare string).
+
+**Note**: `claude-code` provider only supports direct mode — iterative mode auto-downgrades to direct with a warning. Use `anthropic` or `openai` provider for iterative REPL execution.
 
 ## Conventions
 
