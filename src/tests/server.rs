@@ -1,4 +1,4 @@
-use crate::protocol::{INVALID_REQUEST, PARSE_ERROR};
+use crate::protocol::{INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND, PARSE_ERROR};
 
 use super::fixtures::make_server;
 
@@ -77,4 +77,71 @@ fn templates_tool_returns_list() {
     let result = resp.result.unwrap();
     let text = result["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("academic-summary"));
+}
+
+#[test]
+fn ping_result_is_empty_json_object() {
+    let server = make_server();
+    let input = r#"{"jsonrpc":"2.0","id":7,"method":"ping","params":{}}"#;
+    let resp = server.handle_message_for_test(input).unwrap();
+    assert!(resp.error.is_none());
+    let result = resp.result.unwrap();
+    assert_eq!(result, serde_json::json!({}));
+}
+
+#[test]
+fn missing_name_in_tools_call_returns_invalid_params() {
+    let server = make_server();
+    // params is an object but has no "name" key
+    let input = r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"arguments":{}}}"#;
+    let resp = server.handle_message_for_test(input).unwrap();
+    let err = resp.error.unwrap();
+    assert_eq!(err.code, INVALID_PARAMS);
+    assert!(err.message.contains("name"));
+}
+
+#[test]
+fn unknown_tool_returns_method_not_found() {
+    let server = make_server();
+    let input = r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"does_not_exist","arguments":{}}}"#;
+    let resp = server.handle_message_for_test(input).unwrap();
+    let err = resp.error.unwrap();
+    assert_eq!(err.code, METHOD_NOT_FOUND);
+    assert!(err.message.contains("does_not_exist"));
+}
+
+#[test]
+fn unknown_method_returns_method_not_found() {
+    let server = make_server();
+    let input = r#"{"jsonrpc":"2.0","id":10,"method":"resources/list","params":{}}"#;
+    let resp = server.handle_message_for_test(input).unwrap();
+    let err = resp.error.unwrap();
+    assert_eq!(err.code, METHOD_NOT_FOUND);
+    assert!(err.message.contains("resources/list"));
+}
+
+#[test]
+fn malformed_json_returns_parse_error() {
+    let server = make_server();
+    let resp = server.handle_message_for_test("{invalid json}").unwrap();
+    let err = resp.error.unwrap();
+    assert_eq!(err.code, PARSE_ERROR);
+}
+
+#[test]
+fn missing_method_returns_invalid_request() {
+    let server = make_server();
+    // Valid JSON, valid jsonrpc version, but no method field
+    let input = r#"{"jsonrpc":"2.0","id":11,"params":{}}"#;
+    let resp = server.handle_message_for_test(input).unwrap();
+    let err = resp.error.unwrap();
+    assert_eq!(err.code, INVALID_REQUEST);
+}
+
+#[test]
+fn notifications_initialized_returns_none() {
+    let server = make_server();
+    let input = r#"{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}"#;
+    let resp = server.handle_message_for_test(input);
+    assert!(resp.is_none());
 }

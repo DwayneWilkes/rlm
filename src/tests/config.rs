@@ -181,3 +181,106 @@ fn load_config_not_found() {
     let result = load_config_file(None, Some(dir.path())).unwrap();
     assert!(result.is_none());
 }
+
+#[test]
+fn load_config_from_json_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".rlmrc.json");
+    std::fs::write(
+        &path,
+        r#"{
+            "profiles": {
+                "default": {
+                    "provider": {
+                        "type": "anthropic",
+                        "model": "claude-sonnet-4-20250514"
+                    },
+                    "mode": "direct",
+                    "budget": {
+                        "max_cost": 3.0,
+                        "max_iterations": 25,
+                        "max_time_seconds": 120,
+                        "max_depth": 2,
+                        "max_batch_concurrency": 3
+                    }
+                }
+            }
+        }"#,
+    )
+    .unwrap();
+
+    let result = load_config_file(Some(&path), None).unwrap();
+    assert!(result.is_some());
+    let (cfg, found_path) = result.unwrap();
+    assert_eq!(found_path, path);
+    assert!(cfg.profiles.contains_key("default"));
+    let profile = &cfg.profiles["default"];
+    assert_eq!(profile.mode, Some(Mode::Direct));
+    let budget = profile.budget.as_ref().unwrap();
+    assert_eq!(budget.max_cost, Some(3.0));
+    assert_eq!(budget.max_iterations, 25);
+}
+
+#[test]
+fn load_config_json_auto_detected_by_search() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".rlmrc.json");
+    std::fs::write(
+        &path,
+        r#"{"profiles":{"test":{"provider":{"type":"openai","model":"gpt-4o"}}}}"#,
+    )
+    .unwrap();
+
+    let result = load_config_file(None, Some(dir.path())).unwrap();
+    assert!(result.is_some());
+    let (cfg, found_path) = result.unwrap();
+    assert_eq!(found_path, path);
+    assert!(cfg.profiles.contains_key("test"));
+}
+
+#[test]
+fn merge_profile_with_all_none_source_preserves_target() {
+    let cfg_yaml = r#"
+profiles:
+  base:
+    provider:
+      type: anthropic
+      model: claude-sonnet-4-20250514
+    mode: iterative
+    budget:
+      max_cost: 5.0
+      max_iterations: 50
+      max_time_seconds: 300
+      max_depth: 3
+      max_batch_concurrency: 5
+  empty:
+    extends: base
+"#;
+    let cfg: RlmConfigFile = serde_yaml::from_str(cfg_yaml).unwrap();
+    let profile = resolve_profile(&cfg, "empty").unwrap();
+
+    // All values should come from base since empty has no overrides
+    assert_eq!(profile.provider.unwrap().model(), "claude-sonnet-4-20250514");
+    assert_eq!(profile.mode, Some(Mode::Iterative));
+    let budget = profile.budget.unwrap();
+    assert_eq!(budget.max_cost, Some(5.0));
+    assert_eq!(budget.max_iterations, 50);
+}
+
+#[test]
+fn build_config_with_no_cli_overrides() {
+    let cfg = make_config_file();
+    let profile = resolve_profile(&cfg, "base").unwrap();
+    let overrides = CliOverrides {
+        provider: None,
+        mode: None,
+        template: None,
+        synthesize: None,
+    };
+    let resolved = build_config(&profile, &overrides).unwrap();
+    // All values come from profile, none from overrides
+    assert_eq!(resolved.provider.model(), "claude-sonnet-4-20250514");
+    assert_eq!(resolved.mode, Mode::Auto);
+    assert!(!resolved.synthesize);
+    assert!(resolved.template.is_none());
+}

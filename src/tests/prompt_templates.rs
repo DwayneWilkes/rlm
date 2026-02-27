@@ -115,3 +115,46 @@ fn minimal_template_loads() {
     assert!(t.mode.is_none());
     assert!(t.inference.is_none());
 }
+
+#[test]
+fn list_templates_no_external_dir() {
+    // Passing None for external dir should still return builtins
+    let templates = list_templates(None).unwrap();
+    assert!(!templates.is_empty());
+    // All templates should be Builtin source
+    for t in &templates {
+        assert_eq!(t.source, TemplateSource::Builtin);
+    }
+    assert!(templates.iter().any(|t| t.name == "academic-summary"));
+}
+
+#[test]
+fn load_template_invalid_builtin_name_errors() {
+    // No external dir, nonexistent builtin name
+    let result = load_template("totally-invalid-name-xyz", None);
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("not found"));
+    assert!(err_msg.contains("totally-invalid-name-xyz"));
+}
+
+#[test]
+fn load_template_with_yml_extension() {
+    let dir = tempfile::tempdir().unwrap();
+    // Use .yml extension instead of .yaml
+    let path = dir.path().join("short-ext.yml");
+    std::fs::write(
+        &path,
+        r#"
+name: short-ext
+description: Template with .yml extension
+systemPrompt: This uses yml
+"#,
+    )
+    .unwrap();
+
+    let t = load_template("short-ext", Some(dir.path())).unwrap();
+    assert_eq!(t.name, "short-ext");
+    assert_eq!(t.description, "Template with .yml extension");
+    assert_eq!(t.system_prompt.as_deref(), Some("This uses yml"));
+}

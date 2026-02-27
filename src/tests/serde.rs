@@ -282,3 +282,181 @@ fn execution_trace_serde() {
     assert_eq!(back.iterations.len(), 1);
     assert_eq!(back.iterations[0].code_executions.len(), 1);
 }
+
+#[test]
+fn budget_default_field_values_match_constants() {
+    let b = Budget::default();
+    assert!(b.max_cost.is_none(), "max_cost default should be None");
+    assert!(b.max_tokens.is_none(), "max_tokens default should be None");
+    assert_eq!(b.max_time_seconds, 300, "max_time_seconds default should be 300");
+    assert_eq!(b.max_iterations, 50, "max_iterations default should be 50");
+    assert_eq!(b.max_depth, 3, "max_depth default should be 3");
+    assert_eq!(b.max_batch_concurrency, 5, "max_batch_concurrency default should be 5");
+}
+
+#[test]
+fn provider_config_anthropic_round_trip() {
+    let cfg = ProviderConfig::Anthropic {
+        model: "claude-opus-4-20250514".into(),
+        api_key_env: Some("MY_KEY".into()),
+    };
+    let json = serde_json::to_string(&cfg).unwrap();
+    let back: ProviderConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.model(), "claude-opus-4-20250514");
+    match back {
+        ProviderConfig::Anthropic { api_key_env, .. } => {
+            assert_eq!(api_key_env.as_deref(), Some("MY_KEY"));
+        }
+        _ => panic!("expected Anthropic variant"),
+    }
+}
+
+#[test]
+fn provider_config_openai_round_trip() {
+    let cfg = ProviderConfig::OpenAi {
+        model: "gpt-4o".into(),
+        base_url: Some("https://api.openai.com/v1".into()),
+        api_key_env: Some("OPENAI_API_KEY".into()),
+    };
+    let json = serde_json::to_string(&cfg).unwrap();
+    let back: ProviderConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.model(), "gpt-4o");
+    match back {
+        ProviderConfig::OpenAi { base_url, api_key_env, .. } => {
+            assert_eq!(base_url.as_deref(), Some("https://api.openai.com/v1"));
+            assert_eq!(api_key_env.as_deref(), Some("OPENAI_API_KEY"));
+        }
+        _ => panic!("expected OpenAi variant"),
+    }
+}
+
+#[test]
+fn provider_config_claude_code_round_trip() {
+    let cfg = ProviderConfig::ClaudeCode {
+        model: "claude-opus-4-6".into(),
+    };
+    let json = serde_json::to_string(&cfg).unwrap();
+    let back: ProviderConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.model(), "claude-opus-4-6");
+    match back {
+        ProviderConfig::ClaudeCode { model } => {
+            assert_eq!(model, "claude-opus-4-6");
+        }
+        _ => panic!("expected ClaudeCode variant"),
+    }
+}
+
+#[test]
+fn rlm_result_skip_serializing_none_synthesis() {
+    let result = RlmResult {
+        answer: "done".into(),
+        trace: ExecutionTrace::default(),
+        synthesis: None,
+    };
+    let json = serde_json::to_string(&result).unwrap();
+    // synthesis: None should be omitted from JSON
+    assert!(!json.contains("synthesis"), "None synthesis should be omitted");
+}
+
+#[test]
+fn rlm_result_includes_synthesis_when_present() {
+    let result = RlmResult {
+        answer: "done".into(),
+        trace: ExecutionTrace::default(),
+        synthesis: Some("synthesized output".into()),
+    };
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(json.contains("synthesis"));
+    assert!(json.contains("synthesized output"));
+}
+
+#[test]
+fn usage_skip_serializing_none_cost() {
+    let usage = Usage {
+        input_tokens: 100,
+        output_tokens: 50,
+        cost_usd: None,
+    };
+    let json = serde_json::to_string(&usage).unwrap();
+    assert!(!json.contains("cost_usd"), "None cost_usd should be omitted");
+}
+
+#[test]
+fn usage_includes_cost_when_present() {
+    let usage = Usage {
+        input_tokens: 100,
+        output_tokens: 50,
+        cost_usd: Some(0.005),
+    };
+    let json = serde_json::to_string(&usage).unwrap();
+    assert!(json.contains("cost_usd"));
+    assert!(json.contains("0.005"));
+}
+
+#[test]
+fn execution_trace_skip_serializing_none_budget_exhausted() {
+    let trace = ExecutionTrace {
+        mode: Some(Mode::Direct),
+        iterations: vec![],
+        usage: Usage::default(),
+        budget_exhausted: None,
+    };
+    let json = serde_json::to_string(&trace).unwrap();
+    assert!(!json.contains("budget_exhausted"), "None budget_exhausted should be omitted");
+}
+
+#[test]
+fn execution_trace_includes_budget_exhausted_when_present() {
+    let trace = ExecutionTrace {
+        mode: Some(Mode::Iterative),
+        iterations: vec![],
+        usage: Usage::default(),
+        budget_exhausted: Some(BudgetExhaustedReason::TimeExceeded),
+    };
+    let json = serde_json::to_string(&trace).unwrap();
+    assert!(json.contains("budget_exhausted"));
+    assert!(json.contains("time_exceeded"));
+}
+
+#[test]
+fn iteration_skip_serializing_empty_collections() {
+    let iteration = Iteration {
+        index: 0,
+        llm_response: "thinking...".into(),
+        code_executions: vec![],
+        sub_calls: vec![],
+    };
+    let json = serde_json::to_string(&iteration).unwrap();
+    assert!(!json.contains("code_executions"), "empty code_executions should be omitted");
+    assert!(!json.contains("sub_calls"), "empty sub_calls should be omitted");
+}
+
+#[test]
+fn inference_options_skip_serializing_none_fields() {
+    let opts = InferenceOptions::default();
+    let json = serde_json::to_string(&opts).unwrap();
+    // All fields are None, so JSON should be an empty object
+    assert_eq!(json, "{}");
+}
+
+#[test]
+fn provider_config_skip_serializing_none_optional_fields() {
+    let cfg = ProviderConfig::Anthropic {
+        model: "test".into(),
+        api_key_env: None,
+    };
+    let json = serde_json::to_string(&cfg).unwrap();
+    assert!(!json.contains("api_key_env"), "None api_key_env should be omitted");
+}
+
+#[test]
+fn provider_config_openai_skip_serializing_none_fields() {
+    let cfg = ProviderConfig::OpenAi {
+        model: "gpt-4o".into(),
+        base_url: None,
+        api_key_env: None,
+    };
+    let json = serde_json::to_string(&cfg).unwrap();
+    assert!(!json.contains("base_url"), "None base_url should be omitted");
+    assert!(!json.contains("api_key_env"), "None api_key_env should be omitted");
+}
