@@ -135,7 +135,8 @@ impl ToolHandler for RlmExecute {
     }
 }
 
-fn config_from_args(args: &Value) -> Result<RlmConfig> {
+// pub(crate) for test access from src/tests/
+pub(crate) fn config_from_args(args: &Value) -> Result<RlmConfig> {
     // Parse provider from args or default to anthropic
     let provider_type = args["provider"].as_str().unwrap_or("anthropic");
     let model = args["model"].as_str().unwrap_or(match provider_type {
@@ -218,70 +219,5 @@ fn build_client(provider: &ProviderConfig) -> Result<Box<dyn LlmClient>> {
         ProviderConfig::ClaudeCode { model } => {
             Ok(Box::new(ClaudeCodeClient::new(model.clone())))
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn execute_tool_schema_is_valid() {
-        let tool = RlmExecute;
-        let schema = tool.input_schema();
-        assert_eq!(schema["type"], "object");
-        let required = schema["required"].as_array().unwrap();
-        assert!(required.contains(&Value::String("task".to_string())));
-    }
-
-    #[test]
-    fn config_from_args_defaults() {
-        let args = serde_json::json!({"task": "test"});
-        let config = config_from_args(&args).unwrap();
-        assert_eq!(config.mode, Mode::Auto);
-        assert!(!config.synthesize);
-        assert!(config.template.is_none());
-    }
-
-    #[test]
-    fn config_from_args_with_overrides() {
-        let args = serde_json::json!({
-            "task": "test",
-            "mode": "direct",
-            "synthesize": true,
-            "template": "academic-summary",
-            "max_cost": 2.5,
-            "max_iterations": 10,
-            "provider": "claude-code",
-            "model": "claude-opus-4-6"
-        });
-        let config = config_from_args(&args).unwrap();
-        assert_eq!(config.mode, Mode::Direct);
-        assert!(config.synthesize);
-        assert_eq!(config.template.as_deref(), Some("academic-summary"));
-        assert_eq!(config.budget.max_cost, Some(2.5));
-        assert_eq!(config.budget.max_iterations, 10);
-        assert_eq!(config.provider.model(), "claude-opus-4-6");
-    }
-
-    #[test]
-    fn config_from_args_unknown_provider_errors() {
-        let args = serde_json::json!({"task": "test", "provider": "unknown"});
-        let result = config_from_args(&args);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn claude_code_iterative_downgrades_to_direct() {
-        let args = serde_json::json!({
-            "task": "test",
-            "mode": "iterative",
-            "provider": "claude-code"
-        });
-        let config = config_from_args(&args).unwrap();
-        assert_eq!(config.mode, Mode::Iterative);
-        assert!(matches!(config.provider, ProviderConfig::ClaudeCode { .. }));
-        // The downgrade happens in call(), not config_from_args(),
-        // but we verify the config is valid for testing purposes
     }
 }

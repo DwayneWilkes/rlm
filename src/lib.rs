@@ -10,3 +10,6 @@ pub mod sandbox;
 pub mod server;
 pub mod tools;
 pub mod types;
+
+#[cfg(test)]
+mod tests;

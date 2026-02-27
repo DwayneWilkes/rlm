@@ -24,7 +24,9 @@ impl AnthropicClient {
         self
     }
 
-    fn build_body(&self, request: &LlmRequest) -> AnthropicRequest {
+    /// Build the HTTP request body for the Anthropic API.
+    // pub(crate) for test access from src/tests/
+    pub(crate) fn build_body(&self, request: &LlmRequest) -> AnthropicRequest {
         let messages: Vec<AnthropicMessage> = request
             .messages
             .iter()
@@ -92,26 +94,26 @@ impl LlmClient for AnthropicClient {
 // ── Anthropic API types ──
 
 #[derive(Serialize)]
-struct AnthropicRequest {
-    model: String,
-    messages: Vec<AnthropicMessage>,
+pub(crate) struct AnthropicRequest {
+    pub(crate) model: String,
+    pub(crate) messages: Vec<AnthropicMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    system: Option<String>,
-    max_tokens: u32,
+    pub(crate) system: Option<String>,
+    pub(crate) max_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    temperature: Option<f64>,
+    pub(crate) temperature: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    top_p: Option<f64>,
+    pub(crate) top_p: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    top_k: Option<u32>,
+    pub(crate) top_k: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    stop_sequences: Option<Vec<String>>,
+    pub(crate) stop_sequences: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize)]
-struct AnthropicMessage {
-    role: String,
-    content: String,
+pub(crate) struct AnthropicMessage {
+    pub(crate) role: String,
+    pub(crate) content: String,
 }
 
 #[derive(Deserialize)]
@@ -131,102 +133,4 @@ struct AnthropicContentBlock {
 struct AnthropicUsage {
     input_tokens: u64,
     output_tokens: u64,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::types::{InferenceOptions, Message};
-
-    #[test]
-    fn build_body_maps_system_prompt() {
-        let client = AnthropicClient::new("test-key".into());
-        let req = LlmRequest {
-            model: "claude-sonnet-4-20250514".into(),
-            messages: vec![Message {
-                role: "user".into(),
-                content: "hello".into(),
-            }],
-            system: Some("You are helpful.".into()),
-            inference: InferenceOptions::default(),
-        };
-
-        let body = client.build_body(&req);
-        assert_eq!(body.system, Some("You are helpful.".to_string()));
-        assert_eq!(body.messages.len(), 1);
-        assert_eq!(body.messages[0].role, "user");
-    }
-
-    #[test]
-    fn build_body_default_max_tokens() {
-        let client = AnthropicClient::new("test-key".into());
-        let req = LlmRequest {
-            model: "test".into(),
-            messages: vec![],
-            system: None,
-            inference: InferenceOptions::default(),
-        };
-
-        let body = client.build_body(&req);
-        assert_eq!(body.max_tokens, 4096);
-    }
-
-    #[test]
-    fn build_body_with_inference_options() {
-        let client = AnthropicClient::new("test-key".into());
-        let req = LlmRequest {
-            model: "test".into(),
-            messages: vec![],
-            system: None,
-            inference: InferenceOptions {
-                temperature: Some(0.5),
-                top_p: Some(0.9),
-                top_k: Some(40),
-                max_tokens: Some(8192),
-                stop: Some(vec!["STOP".into()]),
-                seed: Some(42), // Anthropic doesn't support seed, but we include it
-            },
-        };
-
-        let body = client.build_body(&req);
-        assert_eq!(body.temperature, Some(0.5));
-        assert_eq!(body.top_p, Some(0.9));
-        assert_eq!(body.top_k, Some(40));
-        assert_eq!(body.max_tokens, 8192);
-        assert_eq!(body.stop_sequences, Some(vec!["STOP".to_string()]));
-    }
-
-    #[test]
-    fn response_parsing() {
-        let json = r#"{
-            "content": [
-                {"type": "text", "text": "Hello "},
-                {"type": "text", "text": "world!"}
-            ],
-            "usage": {
-                "input_tokens": 10,
-                "output_tokens": 5
-            }
-        }"#;
-
-        let resp: AnthropicResponse = serde_json::from_str(json).unwrap();
-        let content: String = resp
-            .content
-            .into_iter()
-            .filter(|b| b.block_type == "text")
-            .map(|b| b.text)
-            .collect::<Vec<_>>()
-            .join("");
-
-        assert_eq!(content, "Hello world!");
-        assert_eq!(resp.usage.input_tokens, 10);
-        assert_eq!(resp.usage.output_tokens, 5);
-    }
-
-    #[test]
-    fn custom_url() {
-        let client = AnthropicClient::new("key".into())
-            .with_url("http://localhost:8080/v1/messages".into());
-        assert_eq!(client.api_url, "http://localhost:8080/v1/messages");
-    }
 }
