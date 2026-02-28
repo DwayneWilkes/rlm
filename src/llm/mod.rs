@@ -18,6 +18,7 @@ pub(crate) trait HttpTransport: Send + Sync {
 pub(crate) struct UreqTransport;
 
 impl HttpTransport for UreqTransport {
+    // NOCOV: production HTTP transport
     fn post(&self, url: &str, headers: &[(&str, &str)], body: &str) -> Result<(u16, String)> {
         let mut req = ureq::post(url);
         for &(k, v) in headers {
@@ -42,6 +43,7 @@ pub(crate) trait ProcessRunner: Send + Sync {
 pub(crate) struct StdProcessRunner;
 
 impl ProcessRunner for StdProcessRunner {
+    // NOCOV: production subprocess runner
     fn run(&self, cmd: &str, args: &[&str], stdin_data: &str) -> Result<(i32, String, String)> {
         use std::io::Write;
         use std::process::{Command, Stdio};

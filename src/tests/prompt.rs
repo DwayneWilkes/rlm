@@ -117,3 +117,90 @@ fn resolve_falls_back_to_mode_default() {
     );
     assert!(prompt.contains("helpful assistant"));
 }
+
+/// Template without system_prompt should fall back to mode default for Direct.
+#[test]
+fn resolve_template_without_system_prompt_falls_back_direct() {
+    let template = PromptTemplate {
+        name: "no-prompt".into(),
+        description: "no prompt".into(),
+        mode: None,
+        system_prompt: None,
+        inference: None,
+        synthesize: None,
+    };
+    let budget = Budget::default();
+    let prompt = resolve_system_prompt(
+        Mode::Direct,
+        Some(&template),
+        &budget,
+        0,
+        "test",
+        &HashMap::new(),
+    );
+    assert!(prompt.contains("helpful assistant"));
+}
+
+/// Template without system_prompt should fall back to mode default for Iterative.
+#[test]
+fn resolve_template_without_system_prompt_falls_back_iterative() {
+    let template = PromptTemplate {
+        name: "no-prompt".into(),
+        description: "no prompt".into(),
+        mode: None,
+        system_prompt: None,
+        inference: None,
+        synthesize: None,
+    };
+    let budget = Budget::default();
+    let prompt = resolve_system_prompt(
+        Mode::Iterative,
+        Some(&template),
+        &budget,
+        0,
+        "test",
+        &HashMap::new(),
+    );
+    assert!(prompt.contains("RLM"));
+}
+
+/// Auto mode should use iterative system prompt.
+#[test]
+fn resolve_auto_mode_uses_iterative_prompt() {
+    let budget = Budget::default();
+    let prompt = resolve_system_prompt(
+        Mode::Auto,
+        None,
+        &budget,
+        0,
+        "test",
+        &HashMap::new(),
+    );
+    assert!(prompt.contains("RLM"));
+}
+
+/// Direct prompt from template with no system_prompt returns default.
+#[test]
+fn direct_prompt_from_template_without_system_prompt() {
+    let template = PromptTemplate {
+        name: "test".into(),
+        description: "test".into(),
+        mode: None,
+        system_prompt: None,
+        inference: None,
+        synthesize: None,
+    };
+    let prompt = build_direct_system_prompt(Some(&template));
+    assert!(prompt.contains("helpful assistant"));
+}
+
+/// Budget with no max_cost omits cost line from iterative prompt.
+#[test]
+fn iterative_prompt_no_cost_budget() {
+    let budget = Budget {
+        max_cost: None,
+        ..Budget::default()
+    };
+    let prompt = build_iterative_system_prompt(&budget, 0, "test", &HashMap::new());
+    assert!(!prompt.contains("Max cost:"));
+}

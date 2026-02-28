@@ -14,6 +14,7 @@ impl Server {
         Self { tools }
     }
 
+    // NOCOV: server I/O loop
     pub fn run(&self) {
         let stdin = io::stdin();
         let stdout = io::stdout();

@@ -1,4 +1,4 @@
-use crate::protocol::{INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND, PARSE_ERROR};
+use crate::protocol::{ToolCallResult, ToolResult, INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND, PARSE_ERROR};
 
 use super::fixtures::make_server;
 
@@ -144,4 +144,40 @@ fn notifications_initialized_returns_none() {
     let input = r#"{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}"#;
     let resp = server.handle_message_for_test(input);
     assert!(resp.is_none());
+}
+
+// ── ToolResult / ToolCallResult conversion tests ────────────────────────────
+
+#[test]
+fn tool_result_err_converts_to_call_result() {
+    let result = ToolResult::err("Something went wrong");
+    let call_result: ToolCallResult = result.into();
+    assert!(call_result.is_error);
+    assert_eq!(call_result.content.len(), 1);
+    assert_eq!(call_result.content[0].text, "Something went wrong");
+    assert_eq!(call_result.content[0].block_type, "text");
+}
+
+#[test]
+fn tool_result_ok_converts_to_call_result() {
+    let result = ToolResult::ok("Success");
+    let call_result: ToolCallResult = result.into();
+    assert!(!call_result.is_error);
+    assert_eq!(call_result.content[0].text, "Success");
+}
+
+/// Test the tools/call path where the tool handler returns an Err
+/// (as opposed to ToolResult::err). This exercises the server.rs error path.
+#[test]
+fn tools_call_execute_without_task_returns_error_result() {
+    let server = make_server();
+    // Call rlm_execute with no task argument — should trigger an error
+    let input = r#"{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"rlm_execute","arguments":{}}}"#;
+    let resp = server.handle_message_for_test(input).unwrap();
+    // The response should be a success JSON-RPC response (tools/call errors are wrapped)
+    assert!(resp.error.is_none(), "Should be a success response with error content");
+    let result = resp.result.unwrap();
+    assert!(result["isError"].as_bool().unwrap_or(false), "Tool should report isError");
+    let text = result["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("Error"), "Expected error message, got: {}", text);
 }

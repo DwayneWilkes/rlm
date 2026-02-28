@@ -154,3 +154,19 @@ fn reasoning_trimmed() {
     let parsed = parse_response(input);
     assert_eq!(parsed.reasoning, "Some reasoning");
 }
+
+/// Unclosed repl code block (no closing ```) should not extract any code.
+#[test]
+fn unclosed_repl_code_block_not_extracted() {
+    let input = "```repl\nprint('hello')\nno closing fence here";
+    let parsed = parse_response(input);
+    assert!(parsed.code_blocks.is_empty(), "Unclosed repl block should not be extracted");
+}
+
+/// FINAL_VAR with unclosed paren should be ignored.
+#[test]
+fn final_var_unclosed_paren_ignored() {
+    let input = "FINAL_VAR(my_var";
+    let parsed = parse_response(input);
+    assert!(parsed.final_answer.is_none(), "FINAL_VAR with unclosed paren should be ignored");
+}

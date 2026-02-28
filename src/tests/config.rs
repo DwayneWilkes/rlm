@@ -284,3 +284,256 @@ fn build_config_with_no_cli_overrides() {
     assert!(!resolved.synthesize);
     assert!(resolved.template.is_none());
 }
+
+// ── display_config coverage ─────────────────────────────────────────────────
+
+#[test]
+fn display_config_with_top_p_and_top_k() {
+    let config = RlmConfig {
+        provider: ProviderConfig::Anthropic {
+            model: "test-model".into(),
+            api_key_env: None,
+        },
+        subcall_provider: None,
+        inference: InferenceOptions {
+            temperature: Some(0.7),
+            top_p: Some(0.9),
+            top_k: Some(40),
+            ..InferenceOptions::default()
+        },
+        budget: Budget {
+            max_tokens: Some(100_000),
+            ..Budget::default()
+        },
+        mode: Mode::Direct,
+        template: None,
+        synthesize: false,
+        model_hints: HashMap::new(),
+        templates_dir: None,
+    };
+    let out = display_config(&config);
+    assert!(out.contains("Top-p: 0.9"), "Expected top_p in output: {}", out);
+    assert!(out.contains("Top-k: 40"), "Expected top_k in output: {}", out);
+    assert!(out.contains("Temperature: 0.7"), "Expected temperature in output: {}", out);
+    assert!(out.contains("Max tokens: 100000"), "Expected max_tokens in output: {}", out);
+    assert!(out.contains("Direct"), "Expected mode in output: {}", out);
+    // No template set — should not appear
+    assert!(!out.contains("Template:"), "Template should not appear when None: {}", out);
+}
+
+#[test]
+fn display_config_without_inference_options() {
+    let config = RlmConfig {
+        provider: ProviderConfig::Anthropic {
+            model: "test".into(),
+            api_key_env: None,
+        },
+        subcall_provider: None,
+        inference: InferenceOptions::default(),
+        budget: Budget::default(),
+        mode: Mode::Auto,
+        template: None,
+        synthesize: false,
+        model_hints: HashMap::new(),
+        templates_dir: None,
+    };
+    let out = display_config(&config);
+    // Should NOT contain inference section since all are None
+    assert!(!out.contains("Inference:"), "Should skip inference section when all None: {}", out);
+}
+
+// ── load_config_file upward search ──────────────────────────────────────────
+
+#[test]
+fn load_config_file_searches_upward() {
+    let dir = tempfile::tempdir().unwrap();
+    // Create config in parent dir
+    let config_path = dir.path().join(".rlmrc.yaml");
+    std::fs::write(
+        &config_path,
+        "profiles:\n  found:\n    provider:\n      type: anthropic\n      model: test\n",
+    )
+    .unwrap();
+
+    // Create a subdirectory to search from
+    let sub = dir.path().join("sub").join("deep");
+    std::fs::create_dir_all(&sub).unwrap();
+
+    let result = load_config_file(None, Some(&sub)).unwrap();
+    assert!(result.is_some(), "Should find config by searching upward");
+    let (cfg, found) = result.unwrap();
+    assert!(cfg.profiles.contains_key("found"));
+    assert_eq!(found, config_path);
+}
+
+#[test]
+fn load_config_file_json_in_search() {
+    let dir = tempfile::tempdir().unwrap();
+    // Place a .rlmrc.json in the search path
+    let config_path = dir.path().join(".rlmrc.json");
+    std::fs::write(
+        &config_path,
+        r#"{"profiles":{"jsontest":{"provider":{"type":"anthropic","model":"test"}}}}"#,
+    )
+    .unwrap();
+
+    let sub = dir.path().join("child");
+    std::fs::create_dir_all(&sub).unwrap();
+
+    let result = load_config_file(None, Some(&sub)).unwrap();
+    assert!(result.is_some());
+    let (cfg, found) = result.unwrap();
+    assert!(cfg.profiles.contains_key("jsontest"));
+    assert_eq!(found, config_path);
+}
+
+// ── merge_profile deep merge budget edge cases ──────────────────────────────
+
+#[test]
+fn merge_profile_budget_fields_all_override() {
+    let yaml = r#"
+profiles:
+  base:
+    provider:
+      type: anthropic
+      model: test
+    budget:
+      max_cost: 1.0
+      max_tokens: 1000
+      max_iterations: 10
+      max_time_seconds: 60
+      max_depth: 2
+      max_batch_concurrency: 3
+  child:
+    extends: base
+    budget:
+      max_cost: 5.0
+      max_tokens: 5000
+      max_iterations: 50
+      max_time_seconds: 300
+      max_depth: 5
+      max_batch_concurrency: 10
+"#;
+    let cfg: RlmConfigFile = serde_yaml::from_str(yaml).unwrap();
+    let profile = resolve_profile(&cfg, "child").unwrap();
+    let budget = profile.budget.unwrap();
+    assert_eq!(budget.max_cost, Some(5.0));
+    assert_eq!(budget.max_tokens, Some(5000));
+    assert_eq!(budget.max_iterations, 50);
+    assert_eq!(budget.max_time_seconds, 300);
+    assert_eq!(budget.max_depth, 5);
+    assert_eq!(budget.max_batch_concurrency, 10);
+}
+
+#[test]
+fn merge_profile_synthesize_and_model_hints() {
+    let yaml = r#"
+profiles:
+  base:
+    provider:
+      type: anthropic
+      model: test
+    synthesize: false
+    model_hints:
+      test: "hint for test"
+  child:
+    extends: base
+    synthesize: true
+"#;
+    let cfg: RlmConfigFile = serde_yaml::from_str(yaml).unwrap();
+    let profile = resolve_profile(&cfg, "child").unwrap();
+    assert_eq!(profile.synthesize, Some(true));
+    // model_hints from base since child doesn't override
+    assert!(profile.model_hints.is_some());
+    assert!(profile.model_hints.unwrap().contains_key("test"));
+}
+
+#[test]
+fn merge_profile_subcall_provider_override() {
+    let yaml = r#"
+profiles:
+  base:
+    provider:
+      type: anthropic
+      model: test
+  child:
+    extends: base
+    subcall_provider:
+      type: openai
+      model: gpt-4o
+"#;
+    let cfg: RlmConfigFile = serde_yaml::from_str(yaml).unwrap();
+    let profile = resolve_profile(&cfg, "child").unwrap();
+    assert!(profile.subcall_provider.is_some());
+    assert_eq!(profile.subcall_provider.unwrap().model(), "gpt-4o");
+}
+
+#[test]
+fn merge_profile_template_override() {
+    let yaml = r#"
+profiles:
+  base:
+    provider:
+      type: anthropic
+      model: test
+    template: base-template
+  child:
+    extends: base
+    template: child-template
+"#;
+    let cfg: RlmConfigFile = serde_yaml::from_str(yaml).unwrap();
+    let profile = resolve_profile(&cfg, "child").unwrap();
+    assert_eq!(profile.template, Some("child-template".into()));
+}
+
+#[test]
+fn merge_profile_inference_stop_and_seed_override() {
+    let yaml = r#"
+profiles:
+  base:
+    provider:
+      type: anthropic
+      model: test
+    inference:
+      temperature: 0.5
+      max_tokens: 1000
+      stop: ["END"]
+  child:
+    extends: base
+    inference:
+      max_tokens: 2000
+      stop: ["STOP", "END"]
+      seed: 99
+"#;
+    let cfg: RlmConfigFile = serde_yaml::from_str(yaml).unwrap();
+    let profile = resolve_profile(&cfg, "child").unwrap();
+    let inf = profile.inference.unwrap();
+    assert_eq!(inf.temperature, Some(0.5)); // inherited from base
+    assert_eq!(inf.max_tokens, Some(2000)); // overridden
+    assert_eq!(inf.stop, Some(vec!["STOP".into(), "END".into()])); // overridden
+    assert_eq!(inf.seed, Some(99)); // new in child
+}
+
+#[test]
+fn merge_profile_inference_top_p_and_top_k() {
+    let yaml = r#"
+profiles:
+  base:
+    provider:
+      type: anthropic
+      model: test
+    inference:
+      temperature: 0.5
+  child:
+    extends: base
+    inference:
+      top_p: 0.9
+      top_k: 40
+"#;
+    let cfg: RlmConfigFile = serde_yaml::from_str(yaml).unwrap();
+    let profile = resolve_profile(&cfg, "child").unwrap();
+    let inf = profile.inference.unwrap();
+    assert_eq!(inf.temperature, Some(0.5)); // inherited
+    assert_eq!(inf.top_p, Some(0.9)); // from child
+    assert_eq!(inf.top_k, Some(40)); // from child
+}

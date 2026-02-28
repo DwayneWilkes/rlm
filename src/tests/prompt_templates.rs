@@ -138,6 +138,65 @@ fn load_template_invalid_builtin_name_errors() {
     assert!(err_msg.contains("totally-invalid-name-xyz"));
 }
 
+/// When templates_dir is set but the template isn't found there, fall back to builtin.
+#[test]
+fn load_template_falls_through_external_to_builtin() {
+    let dir = tempfile::tempdir().unwrap();
+    // Dir exists but has no "academic-summary.yaml" or "academic-summary.yml"
+    let t = load_template("academic-summary", Some(dir.path())).unwrap();
+    assert_eq!(t.name, "academic-summary");
+    assert!(t.system_prompt.is_some());
+}
+
+/// External template with same name as builtin is skipped in list (builtin wins).
+#[test]
+fn list_templates_external_duplicate_name_skipped() {
+    let dir = tempfile::tempdir().unwrap();
+    // Create an external template with the same name as the builtin
+    std::fs::write(
+        dir.path().join("academic-summary-dupe.yaml"),
+        "name: academic-summary\ndescription: Duplicate\nsystemPrompt: dupe\n",
+    )
+    .unwrap();
+    // Also create a unique external template
+    std::fs::write(
+        dir.path().join("unique.yaml"),
+        "name: unique-template\ndescription: Unique\nsystemPrompt: unique\n",
+    )
+    .unwrap();
+
+    let templates = list_templates(Some(dir.path())).unwrap();
+    // Should have builtin academic-summary + unique-template, NOT duplicate academic-summary
+    let names: Vec<&str> = templates.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(
+        names.iter().filter(|&&n| n == "academic-summary").count(),
+        1,
+        "Should only have one academic-summary"
+    );
+    assert!(names.contains(&"unique-template"));
+}
+
+/// External directory with invalid YAML file is silently skipped.
+#[test]
+fn list_templates_invalid_yaml_skipped() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("broken.yaml"),
+        "not: valid: yaml: template: {{{",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("good.yaml"),
+        "name: good\ndescription: A good template\n",
+    )
+    .unwrap();
+
+    let templates = list_templates(Some(dir.path())).unwrap();
+    // Should have builtin + good, broken is skipped
+    assert!(templates.iter().any(|t| t.name == "good"));
+    assert!(!templates.iter().any(|t| t.name == "broken"));
+}
+
 #[test]
 fn load_template_with_yml_extension() {
     let dir = tempfile::tempdir().unwrap();

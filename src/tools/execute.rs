@@ -198,7 +198,8 @@ pub fn build_client_from_config(config: &RlmConfig) -> Result<Box<dyn LlmClient>
     build_client(&config.provider)
 }
 
-fn build_client(provider: &ProviderConfig) -> Result<Box<dyn LlmClient>> {
+// pub(crate) for test access from src/tests/
+pub(crate) fn build_client(provider: &ProviderConfig) -> Result<Box<dyn LlmClient>> {
     match provider {
         ProviderConfig::Anthropic { api_key_env, .. } => {
             let env_var = api_key_env.as_deref().unwrap_or("ANTHROPIC_API_KEY");

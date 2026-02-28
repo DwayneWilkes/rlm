@@ -460,3 +460,11 @@ fn provider_config_openai_skip_serializing_none_fields() {
     assert!(!json.contains("base_url"), "None base_url should be omitted");
     assert!(!json.contains("api_key_env"), "None api_key_env should be omitted");
 }
+
+/// Deserializing ClaudeCode without model field triggers default_claude_code_model().
+#[test]
+fn provider_config_claude_code_default_model() {
+    let json = r#"{"type":"claude-code"}"#;
+    let cfg: ProviderConfig = serde_json::from_str(json).unwrap();
+    assert_eq!(cfg.model(), "claude-sonnet-4-20250514");
+}

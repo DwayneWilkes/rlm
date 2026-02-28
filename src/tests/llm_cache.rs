@@ -64,3 +64,19 @@ fn model_affects_key() {
     let key2 = ResponseCache::cache_key(&req2);
     assert_ne!(key1, key2);
 }
+
+#[test]
+fn is_empty_on_new_cache() {
+    let cache = ResponseCache::new();
+    assert!(cache.is_empty());
+    assert_eq!(cache.len(), 0);
+}
+
+#[test]
+fn is_empty_false_after_put() {
+    let mut cache = ResponseCache::new();
+    let req = make_request("test");
+    cache.put(&req, make_response("resp"));
+    assert!(!cache.is_empty());
+    assert_eq!(cache.len(), 1);
+}

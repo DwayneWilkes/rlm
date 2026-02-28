@@ -16,6 +16,7 @@ pub struct PythonSandbox {
 }
 
 impl PythonSandbox {
+    // NOCOV: subprocess management
     pub fn new() -> Result<Self> {
         let mut child = Command::new("python3")
             .args(["-u", "-c", HARNESS_PY])
@@ -46,6 +47,7 @@ impl PythonSandbox {
         self
     }
 
+    // NOCOV: subprocess management
     fn send_command(&mut self, cmd: &SandboxCommand) -> Result<SandboxResponse> {
         let stdin = self
             .stdin
