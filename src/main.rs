@@ -1,16 +1,19 @@
 #![deny(unsafe_code)]
 
+// NOCOV: entry point glue — this entire file is CLI I/O wiring.
+// All testable logic lives in rlm::cli and other library modules.
+
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use rlm::config::{build_config, load_config_file, resolve_profile, CliOverrides};
+use rlm::cli::{format_result, load_resolved_config, parse_output_format, resolve_effective_mode};
 use rlm::engine::direct::DirectExecutor;
 use rlm::engine::iterative::IterativeExecutor;
 use rlm::engine::mode::resolve_mode;
 use rlm::prompt::templates::list_templates;
 use rlm::sandbox::python::PythonSandbox;
-use rlm::types::{Executor, Mode, OutputFormat, ProviderConfig};
+use rlm::types::Executor;
 
 #[derive(Parser)]
 #[command(name = "rlm", version, about = "Read-Loop-Mond — iterative LLM + code execution engine")]
@@ -81,6 +84,7 @@ enum ConfigAction {
     },
 }
 
+// NOCOV: entry point glue
 fn main() {
     let cli = Cli::parse();
 
@@ -108,6 +112,7 @@ fn main() {
     }
 }
 
+// NOCOV: entry point glue
 fn cmd_serve() -> anyhow::Result<()> {
     let tools = rlm::tools::all_tools();
     let srv = rlm::server::Server::new(tools);
@@ -115,6 +120,7 @@ fn cmd_serve() -> anyhow::Result<()> {
     Ok(())
 }
 
+// NOCOV: entry point glue
 #[allow(clippy::too_many_arguments)]
 fn cmd_run(
     task: String,
@@ -148,15 +154,14 @@ fn cmd_run(
     )?;
 
     // Resolve mode
-    let mut mode = resolve_mode(config.mode, &context, config.provider.model());
+    let resolved = resolve_mode(config.mode, &context, config.provider.model());
+    let (mode, downgraded) = resolve_effective_mode(resolved, &config.provider);
 
-    // claude-code provider only supports direct mode
-    if mode == Mode::Iterative && matches!(config.provider, ProviderConfig::ClaudeCode { .. }) {
+    if downgraded {
         eprintln!(
             "Warning: claude-code provider does not support iterative mode — \
              falling back to direct mode. Use anthropic or openai provider for iterative."
         );
-        mode = Mode::Direct;
     }
 
     // Build LLM client
@@ -164,11 +169,11 @@ fn cmd_run(
 
     // Execute
     let result = match mode {
-        Mode::Direct => {
+        rlm::types::Mode::Direct => {
             let executor = DirectExecutor::new(client.as_ref());
             executor.execute(&task, &context, &config)?
         }
-        Mode::Iterative | Mode::Auto => {
+        rlm::types::Mode::Iterative | rlm::types::Mode::Auto => {
             let sandbox = PythonSandbox::new()?;
             let mut executor = IterativeExecutor::new(client.as_ref(), Box::new(sandbox));
             executor.execute_mut(&task, &context, &config)?
@@ -176,30 +181,14 @@ fn cmd_run(
     };
 
     // Format output
-    let output_format = match format.as_str() {
-        "json" => OutputFormat::Json,
-        "yaml" => OutputFormat::Yaml,
-        _ => OutputFormat::Text,
-    };
-
-    match output_format {
-        OutputFormat::Text => {
-            println!("{}", result.answer);
-            if let Some(ref synth) = result.synthesis {
-                println!("\n--- Synthesis ---\n{}", synth);
-            }
-        }
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-        OutputFormat::Yaml => {
-            println!("{}", serde_yaml::to_string(&result)?);
-        }
-    }
+    let output_format = parse_output_format(&format);
+    let formatted = format_result(&result, output_format)?;
+    println!("{}", formatted);
 
     Ok(())
 }
 
+// NOCOV: entry point glue
 fn cmd_config_show(
     profile_name: Option<String>,
     config_path: Option<PathBuf>,
@@ -215,6 +204,7 @@ fn cmd_config_show(
     Ok(())
 }
 
+// NOCOV: entry point glue
 fn cmd_templates() -> anyhow::Result<()> {
     let templates = list_templates(None)?;
     if templates.is_empty() {
@@ -225,56 +215,4 @@ fn cmd_templates() -> anyhow::Result<()> {
         println!("  {} — {}", t.name, t.description);
     }
     Ok(())
-}
-
-fn load_resolved_config(
-    config_path: Option<&std::path::Path>,
-    profile_name: Option<&str>,
-    mode_str: Option<&str>,
-    template_name: Option<&str>,
-    synthesize: bool,
-) -> anyhow::Result<rlm::types::RlmConfig> {
-    let mode = mode_str.map(|m| match m {
-        "direct" => Mode::Direct,
-        "iterative" => Mode::Iterative,
-        _ => Mode::Auto,
-    });
-
-    let overrides = CliOverrides {
-        provider: None,
-        mode,
-        template: template_name.map(String::from),
-        synthesize: if synthesize { Some(true) } else { None },
-    };
-
-    // Try loading config file
-    match load_config_file(config_path, None)? {
-        Some((cfg_file, _path)) => {
-            let profile_key = profile_name
-                .map(String::from)
-                .or_else(|| {
-                    // Use first profile if only one exists
-                    if cfg_file.profiles.len() == 1 {
-                        cfg_file.profiles.keys().next().cloned()
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_else(|| "default".to_string());
-
-            let profile = resolve_profile(&cfg_file, &profile_key)?;
-            build_config(&profile, &overrides)
-        }
-        None => {
-            // No config file — use defaults
-            let profile = rlm::types::Profile {
-                provider: Some(ProviderConfig::Anthropic {
-                    model: "claude-sonnet-4-20250514".to_string(),
-                    api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
-                }),
-                ..rlm::types::Profile::default()
-            };
-            build_config(&profile, &overrides)
-        }
-    }
 }

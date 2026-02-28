@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 
 pub mod budget;
+pub mod cli;
 pub mod config;
 pub mod engine;
 pub mod llm;

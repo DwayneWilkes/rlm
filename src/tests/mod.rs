@@ -1,4 +1,5 @@
 mod budget;
+mod cli;
 mod config;
 mod engine_direct;
 mod engine_iterative;
