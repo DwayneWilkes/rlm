@@ -198,6 +198,105 @@ impl LlmClient for MockClient {
     }
 }
 
+// ── MockHttpTransport (llm/anthropic, llm/openai) ───────────────────────────
+
+use std::sync::Arc;
+
+use crate::llm::HttpTransport;
+
+/// Captures the URL, headers, and body from each POST call, and returns a
+/// pre-configured (status, body) response. The captured data is stored in
+/// an Arc<Mutex<...>> so the test can clone the handle before handing the
+/// mock to a client via Box<dyn HttpTransport>.
+pub struct MockHttpTransport {
+    pub status: u16,
+    pub response_body: String,
+    pub captured: Arc<Mutex<Vec<CapturedPost>>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CapturedPost {
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub body: String,
+}
+
+impl MockHttpTransport {
+    pub fn new(status: u16, response_body: &str) -> Self {
+        Self {
+            status,
+            response_body: response_body.to_string(),
+            captured: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Get a clone of the capture buffer handle for inspection after the
+    /// mock has been moved into a client.
+    pub fn capture_handle(&self) -> Arc<Mutex<Vec<CapturedPost>>> {
+        Arc::clone(&self.captured)
+    }
+}
+
+impl HttpTransport for MockHttpTransport {
+    fn post(&self, url: &str, headers: &[(&str, &str)], body: &str) -> Result<(u16, String)> {
+        self.captured.lock().unwrap().push(CapturedPost {
+            url: url.to_string(),
+            headers: headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            body: body.to_string(),
+        });
+        Ok((self.status, self.response_body.clone()))
+    }
+}
+
+// ── MockProcessRunner (llm/claude_code) ─────────────────────────────────────
+
+use crate::llm::ProcessRunner;
+
+/// Returns a pre-configured (exit_code, stdout, stderr) and captures the
+/// command, args, and stdin_data from each call. Same Arc<Mutex> pattern
+/// as MockHttpTransport for post-move inspection.
+pub struct MockProcessRunner {
+    pub exit_code: i32,
+    pub stdout: String,
+    pub stderr: String,
+    pub captured: Arc<Mutex<Vec<CapturedRun>>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CapturedRun {
+    pub cmd: String,
+    pub args: Vec<String>,
+    pub stdin_data: String,
+}
+
+impl MockProcessRunner {
+    pub fn new(exit_code: i32, stdout: &str, stderr: &str) -> Self {
+        Self {
+            exit_code,
+            stdout: stdout.to_string(),
+            stderr: stderr.to_string(),
+            captured: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Get a clone of the capture buffer handle for inspection after the
+    /// mock has been moved into a client.
+    pub fn capture_handle(&self) -> Arc<Mutex<Vec<CapturedRun>>> {
+        Arc::clone(&self.captured)
+    }
+}
+
+impl ProcessRunner for MockProcessRunner {
+    fn run(&self, cmd: &str, args: &[&str], stdin_data: &str) -> Result<(i32, String, String)> {
+        self.captured.lock().unwrap().push(CapturedRun {
+            cmd: cmd.to_string(),
+            args: args.iter().map(|a| a.to_string()).collect(),
+            stdin_data: stdin_data.to_string(),
+        });
+        Ok((self.exit_code, self.stdout.clone(), self.stderr.clone()))
+    }
+}
+
 // ── Shared helpers ──────────────────────────────────────────────────────────
 
 pub fn test_config() -> RlmConfig {

@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::llm::{HttpTransport, UreqTransport};
 use crate::types::{LlmClient, LlmRequest, LlmResponse, Usage};
 
 const DEFAULT_API_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -9,6 +10,7 @@ const API_VERSION: &str = "2023-06-01";
 pub struct AnthropicClient {
     api_key: String,
     api_url: String,
+    http: Box<dyn HttpTransport>,
 }
 
 impl AnthropicClient {
@@ -16,12 +18,22 @@ impl AnthropicClient {
         Self {
             api_key,
             api_url: DEFAULT_API_URL.to_string(),
+            http: Box::new(UreqTransport),
         }
     }
 
     pub fn with_url(mut self, url: String) -> Self {
         self.api_url = url;
         self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_transport(api_key: String, http: Box<dyn HttpTransport>) -> Self {
+        Self {
+            api_key,
+            api_url: DEFAULT_API_URL.to_string(),
+            http,
+        }
     }
 
     /// Build the HTTP request body for the Anthropic API.
@@ -56,15 +68,13 @@ impl LlmClient for AnthropicClient {
         let body = self.build_body(request);
         let json_body = serde_json::to_string(&body)?;
 
-        let mut resp = ureq::post(&self.api_url)
-            .header("Content-Type", "application/json")
-            .header("X-API-Key", &self.api_key)
-            .header("anthropic-version", API_VERSION)
-            .send(&json_body)
-            .map_err(|e| anyhow::anyhow!("Anthropic API error: {}", e))?;
+        let headers = [
+            ("Content-Type", "application/json"),
+            ("X-API-Key", self.api_key.as_str()),
+            ("anthropic-version", API_VERSION),
+        ];
 
-        let status = resp.status();
-        let body_text = resp.body_mut().read_to_string()?;
+        let (status, body_text) = self.http.post(&self.api_url, &headers, &json_body)?;
 
         if status != 200 {
             bail!("Anthropic API error (HTTP {}): {}", status, body_text);

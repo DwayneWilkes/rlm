@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::llm::{HttpTransport, UreqTransport};
 use crate::types::{LlmClient, LlmRequest, LlmResponse, Usage};
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -8,6 +9,7 @@ const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 pub struct OpenAiClient {
     base_url: String,
     api_key: Option<String>,
+    http: Box<dyn HttpTransport>,
 }
 
 impl OpenAiClient {
@@ -15,6 +17,20 @@ impl OpenAiClient {
         Self {
             base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
             api_key,
+            http: Box::new(UreqTransport),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_transport(
+        base_url: Option<String>,
+        api_key: Option<String>,
+        http: Box<dyn HttpTransport>,
+    ) -> Self {
+        Self {
+            base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
+            api_key,
+            http,
         }
     }
 
@@ -57,18 +73,16 @@ impl LlmClient for OpenAiClient {
         let body = self.build_body(request);
         let json_body = serde_json::to_string(&body)?;
 
-        let mut req = ureq::post(&url).header("Content-Type", "application/json");
+        let mut headers: Vec<(&str, &str)> = vec![("Content-Type", "application/json")];
 
+        // We need to hold the formatted string so the borrow lives long enough
+        let auth_header;
         if let Some(key) = &self.api_key {
-            req = req.header("Authorization", &format!("Bearer {}", key));
+            auth_header = format!("Bearer {}", key);
+            headers.push(("Authorization", &auth_header));
         }
 
-        let mut resp = req
-            .send(&json_body)
-            .map_err(|e| anyhow::anyhow!("OpenAI-compatible API error: {}", e))?;
-
-        let status = resp.status();
-        let body_text = resp.body_mut().read_to_string()?;
+        let (status, body_text) = self.http.post(&url, &headers, &json_body)?;
 
         if status != 200 {
             bail!(

@@ -1,20 +1,27 @@
-use std::io::Write;
-use std::process::{Command, Stdio};
-
 use anyhow::{bail, Result};
 use serde::Deserialize;
 
+use crate::llm::{ProcessRunner, StdProcessRunner};
 use crate::types::{LlmClient, LlmRequest, LlmResponse, Message, Usage};
 
 /// LLM adapter that spawns the `claude` CLI binary as a subprocess.
 /// Uses subscription-based authentication (no API key needed).
 pub struct ClaudeCodeClient {
     model: String,
+    runner: Box<dyn ProcessRunner>,
 }
 
 impl ClaudeCodeClient {
     pub fn new(model: String) -> Self {
-        Self { model }
+        Self {
+            model,
+            runner: Box::new(StdProcessRunner),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_runner(model: String, runner: Box<dyn ProcessRunner>) -> Self {
+        Self { model, runner }
     }
 }
 
@@ -51,29 +58,11 @@ impl LlmClient for ClaudeCodeClient {
         let args = build_cli_args(&self.model, &request.system);
         let prompt = build_stdin_prompt(&request.messages);
 
-        // Spawn claude binary
-        let mut child = Command::new("claude")
-            .args(&args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| anyhow::anyhow!("Failed to spawn claude binary: {}. Is claude CLI installed?", e))?;
+        let (exit_code, stdout, stderr) = self.runner.run("claude", &args, &prompt)?;
 
-        // Send prompt via stdin
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(prompt.as_bytes())?;
-            // stdin is dropped here, closing it
+        if exit_code != 0 {
+            bail!("claude binary exited with code {}: {}", exit_code, stderr);
         }
-
-        let output = child.wait_with_output()?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("claude binary exited with {}: {}", output.status, stderr);
-        }
-
-        let stdout = String::from_utf8(output.stdout)?;
 
         // Parse JSON output
         let cc_resp: ClaudeCodeResponse = serde_json::from_str(&stdout)
