@@ -345,6 +345,21 @@ pub fn make_sandbox() -> Result<crate::sandbox::python::PythonSandbox> {
     crate::sandbox::python::PythonSandbox::new()
 }
 
+/// Run a test with a Python sandbox, skipping if python3 is unavailable.
+/// Handles init, destroy, and the skip guard.
+pub fn with_sandbox(context: &str, f: impl FnOnce(&mut crate::sandbox::python::PythonSandbox)) {
+    let mut sb = match make_sandbox() {
+        Ok(sb) => sb,
+        Err(e) => {
+            eprintln!("Skipping test (python3 not available): {}", e);
+            return;
+        }
+    };
+    sb.init(context).unwrap();
+    f(&mut sb);
+    sb.destroy().unwrap();
+}
+
 pub fn make_request(prompt: &str) -> LlmRequest {
     LlmRequest {
         model: "test-model".into(),
