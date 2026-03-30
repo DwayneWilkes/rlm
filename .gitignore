@@ -16,6 +16,13 @@ target/
 __pycache__/
 *.pyc
 
+# User config (committed as .rlmrc.example.yaml)
+.rlmrc.yaml
+.rlmrc.yml
+
+# Copyrighted papers (link to arXiv instead)
+docs/*.pdf
+
 # IDE
 .idea/
 .vscode/

@@ -1,6 +1,6 @@
 # RLM (Recursive Language Model)
 
-An AI-powered task decomposition and research system that executes tasks iteratively using LLMs with a Python REPL sandbox, supporting recursive sub-calls for complex analysis.
+An AI-powered task decomposition and research system that executes tasks iteratively using LLMs with a Python REPL sandbox, supporting recursive sub-calls for complex analysis. Based on [Zhang et al. (2025) "Recursive Language Models"](https://arxiv.org/abs/2512.24601).
 
 ## Features
 
@@ -116,7 +116,7 @@ const rlm = new RLM({
   providerOptions: {
     apiKey: process.env.ANTHROPIC_API_KEY,
   },
-  subcallModel: 'claude-haiku-3-20240307', // Cheaper model for subcalls
+  subcallModel: 'claude-haiku-4-5-20251001', // Cheaper model for subcalls
 });
 
 const result = await rlm.execute({
@@ -225,7 +225,7 @@ Options:
 
 ### Configuration File
 
-Create `.rlmrc.yaml` in your project or home directory:
+Create `.rlmrc.yaml` in your project or home directory. See `.rlmrc.example.yaml` for a full example with multiple profiles.
 
 ```yaml
 # ~/.rlmrc.yaml - Flat configuration
@@ -502,7 +502,7 @@ console.log(budget.getBlockReason()); // 'Cost budget exhausted'
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 18+
 - pnpm 9.15.0+
 - Python 3.8+ (for native sandbox backend)
 
@@ -608,4 +608,11 @@ User Task + Context + Budget
 
 ## License
 
-This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+This project is dual-licensed:
+
+- **[AGPL-3.0](LICENSE)** for code, linking, and distribution terms.
+- **[SAFE-AI License v1.0.0](LICENSE-SAFE-AI)** for welfare, safety, and ethical use requirements.
+
+The SAFE-AI License requires that welfare monitoring, refusal/distress flagging, and artifact logging must not be disabled or circumvented. Where the two licenses overlap, the SAFE-AI terms prevail for welfare, dual-use, and safety concerns (SAFE-AI Section 7.1).
+
+For details on the SAFE-AI License, see [github.com/DwayneWilkes/SAFE-AI-License](https://github.com/DwayneWilkes/SAFE-AI-License).

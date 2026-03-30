@@ -1,5 +1,6 @@
-# RLM Configuration
-# Supports multiple profiles with `extends` inheritance
+# RLM Configuration Example
+# Copy to .rlmrc.yaml and edit for your setup.
+# Supports multiple profiles with `extends` inheritance.
 
 profiles:
   # Local development with Ollama (free, private)
