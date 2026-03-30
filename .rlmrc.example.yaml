@@ -10,7 +10,7 @@ profiles:
       model: qwen3:latest
       base_url: http://localhost:11434/v1
     budget:
-      max_cost: 999.0
+      max_cost: 0.0  # local models are free — set a real limit for cloud providers
       max_iterations: 50
       max_time_seconds: 300
 

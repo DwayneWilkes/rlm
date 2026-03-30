@@ -2,7 +2,8 @@
 name = "rlm"
 version = "0.1.0"
 edition = "2021"
-description = "Read-Loop-Mond — iterative LLM + code execution engine"
+description = "Recursive Language Model — iterative LLM + code execution engine"
+license = "AGPL-3.0-or-later AND LicenseRef-SAFE-AI"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

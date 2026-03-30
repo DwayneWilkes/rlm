@@ -616,3 +616,5 @@ This project is dual-licensed:
 The SAFE-AI License requires that welfare monitoring, refusal/distress flagging, and artifact logging must not be disabled or circumvented. Where the two licenses overlap, the SAFE-AI terms prevail for welfare, dual-use, and safety concerns (SAFE-AI Section 7.1).
 
 For details on the SAFE-AI License, see [github.com/DwayneWilkes/SAFE-AI-License](https://github.com/DwayneWilkes/SAFE-AI-License).
+
+To report safety, welfare, or misuse concerns, open an issue at [github.com/DwayneWilkes/rlm/issues](https://github.com/DwayneWilkes/rlm/issues).

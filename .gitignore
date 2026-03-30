@@ -21,7 +21,7 @@ __pycache__/
 .rlmrc.yml
 
 # Copyrighted papers (link to arXiv instead)
-docs/*.pdf
+docs/Zhang*.pdf
 
 # IDE
 .idea/
