@@ -11,30 +11,12 @@
 import * as net from 'node:net';
 import type { Sandbox, SandboxBridges, CodeExecution } from '@rlm/core';
 import { readToken, getDefaultTokenPath } from './auth.js';
-
-/**
- * JSON-RPC request interface.
- */
-interface JsonRpcRequest {
-  jsonrpc: '2.0';
-  id: number;
-  method: string;
-  params?: Record<string, unknown>;
-}
-
-/**
- * JSON-RPC response interface.
- */
-interface JsonRpcResponse {
-  jsonrpc: '2.0';
-  id: number;
-  result?: unknown;
-  error?: {
-    code: number;
-    message: string;
-    data?: unknown;
-  };
-}
+import {
+  type JsonRpcRequest,
+  type JsonRpcResponse,
+  type PendingRequest,
+  NdjsonParser,
+} from './types.js';
 
 /**
  * Execute result from daemon.
@@ -52,14 +34,6 @@ interface DaemonExecuteResult {
 interface DaemonGetVariableResult {
   found: boolean;
   value: unknown;
-}
-
-/**
- * Pending request tracking.
- */
-interface PendingRequest {
-  resolve: (result: unknown) => void;
-  reject: (error: Error) => void;
 }
 
 /**
@@ -91,7 +65,7 @@ export class DaemonClientSandbox implements Sandbox {
   private authenticated = false;
   private requestId = 0;
   private pendingRequests: Map<number, PendingRequest> = new Map();
-  private buffer = '';
+  private parser = new NdjsonParser();
 
   /**
    * Create a new DaemonClientSandbox.
@@ -274,13 +248,7 @@ export class DaemonClientSandbox implements Sandbox {
    * Handle incoming data from the socket.
    */
   private handleData(data: string): void {
-    this.buffer += data;
-    const lines = this.buffer.split('\n');
-    this.buffer = lines.pop() ?? '';
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-
+    for (const line of this.parser.push(data)) {
       try {
         const message = JSON.parse(line) as JsonRpcRequest | JsonRpcResponse;
 
@@ -301,12 +269,13 @@ export class DaemonClientSandbox implements Sandbox {
    * Handle a JSON-RPC response from daemon.
    */
   private handleResponse(response: JsonRpcResponse): void {
-    const pending = this.pendingRequests.get(response.id);
+    const id = response.id as number;
+    const pending = this.pendingRequests.get(id);
     if (!pending) {
       return;
     }
 
-    this.pendingRequests.delete(response.id);
+    this.pendingRequests.delete(id);
 
     if (response.error) {
       pending.reject(new Error(response.error.message));

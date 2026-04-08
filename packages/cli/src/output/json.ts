@@ -6,6 +6,7 @@
 
 import type { RLMResult } from '@rlm/core';
 import type { Formatter } from './formatter.js';
+import { serializeError } from './serialize-error.js';
 
 /**
  * Options for JsonFormatter.
@@ -13,17 +14,6 @@ import type { Formatter } from './formatter.js';
 export interface JsonFormatterOptions {
   /** Indentation spaces for pretty-printing (default: 2, 0 for compact) */
   indent?: number;
-}
-
-/**
- * Convert Error object to a serializable format.
- */
-function serializeError(error: Error): Record<string, unknown> {
-  return {
-    name: error.name,
-    message: error.message,
-    stack: error.stack,
-  };
 }
 
 /**

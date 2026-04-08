@@ -11,6 +11,7 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { readToken, getDefaultTokenPath } from './auth.js';
+import { NdjsonParser } from './types.js';
 
 /**
  * Daemon ping response containing status information.
@@ -120,7 +121,7 @@ export async function pingDaemon(
 
   return new Promise((resolve) => {
     const socket = net.createConnection(target);
-    let buffer = '';
+    const parser = new NdjsonParser();
     let resolved = false;
     let authenticated = false;
     let requestId = 0;
@@ -156,13 +157,7 @@ export async function pingDaemon(
     });
 
     socket.on('data', (data: Buffer) => {
-      buffer += data.toString();
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-
+      for (const line of parser.push(data.toString())) {
         try {
           const response = JSON.parse(line);
 

@@ -12,57 +12,24 @@ import path from 'node:path';
 import os from 'node:os';
 import type { WorkerPool } from './pool.js';
 import { validateToken } from './auth.js';
-
-/**
- * JSON-RPC request interface.
- */
-interface JsonRpcRequest {
-  jsonrpc: '2.0';
-  id: string | number | null;
-  method: string;
-  params?: Record<string, unknown>;
-}
-
-/**
- * JSON-RPC response interface.
- */
-interface JsonRpcResponse {
-  jsonrpc: '2.0';
-  id: string | number | null;
-  result?: unknown;
-  error?: {
-    code: number;
-    message: string;
-    data?: unknown;
-  };
-}
-
-/**
- * JSON-RPC error codes.
- */
-const JSON_RPC_ERRORS = {
-  PARSE_ERROR: -32700,
-  INVALID_REQUEST: -32600,
-  METHOD_NOT_FOUND: -32601,
-  INVALID_PARAMS: -32602,
-  INTERNAL_ERROR: -32603,
-  UNAUTHORIZED: -32000,
-} as const;
+import { getSocketPath } from './detect.js';
+import {
+  type JsonRpcRequest,
+  type JsonRpcResponse,
+  JSON_RPC_ERRORS,
+  NdjsonParser,
+} from './types.js';
 
 /**
  * Get the default socket path for the current platform.
  *
- * Uses user-specific path for isolation between users.
+ * Delegates to the canonical getSocketPath() from detect.ts to ensure
+ * server and client always use the same path.
  *
  * @returns Socket path for Unix or named pipe path for Windows
  */
 export function getDefaultSocketPath(): string {
-  if (os.platform() === 'win32') {
-    const username = os.userInfo().username;
-    return `\\\\.\\pipe\\rlm-daemon-${username}`;
-  }
-  const uid = process.getuid?.() ?? 'default';
-  return `/tmp/rlm-daemon-${uid}.sock`;
+  return getSocketPath();
 }
 
 /**
@@ -192,18 +159,10 @@ export class DaemonServer {
    * Handle an incoming connection.
    */
   private handleConnection(socket: net.Socket): void {
-    let buffer = '';
+    const parser = new NdjsonParser();
 
     socket.on('data', async (data) => {
-      buffer += data.toString();
-
-      // Process complete messages (newline-delimited)
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-
+      for (const line of parser.push(data.toString())) {
         const response = await this.handleMessage(line, socket);
         socket.write(JSON.stringify(response) + '\n');
       }

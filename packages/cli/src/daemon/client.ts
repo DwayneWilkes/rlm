@@ -9,30 +9,12 @@
  */
 
 import * as net from 'node:net';
-
-/**
- * JSON-RPC request interface.
- */
-interface JsonRpcRequest {
-  jsonrpc: '2.0';
-  id: number;
-  method: string;
-  params?: Record<string, unknown>;
-}
-
-/**
- * JSON-RPC response interface.
- */
-interface JsonRpcResponse {
-  jsonrpc: '2.0';
-  id: number;
-  result?: unknown;
-  error?: {
-    code: number;
-    message: string;
-    data?: unknown;
-  };
-}
+import {
+  type JsonRpcRequest,
+  type JsonRpcResponse,
+  type PendingRequest,
+  NdjsonParser,
+} from './types.js';
 
 /**
  * IPC Client configuration options.
@@ -46,15 +28,6 @@ export interface IPCClientOptions {
   connectTimeout?: number;
   /** Authentication token for daemon connection */
   authToken?: string;
-}
-
-/**
- * Pending request tracking.
- */
-interface PendingRequest {
-  resolve: (result: unknown) => void;
-  reject: (error: Error) => void;
-  timeoutHandle: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -82,7 +55,7 @@ export class IPCClient {
   private authenticated = false;
   private requestId = 0;
   private pendingRequests: Map<number, PendingRequest> = new Map();
-  private buffer = '';
+  private parser = new NdjsonParser();
 
   /**
    * Create a new IPC Client.
@@ -138,9 +111,12 @@ export class IPCClient {
       this.socket.on('close', () => {
         this.connected = false;
         this.authenticated = false;
+        this.parser.reset();
         // Reject all pending requests
         for (const [, pending] of this.pendingRequests) {
-          clearTimeout(pending.timeoutHandle);
+          if (pending.timeoutHandle) {
+            clearTimeout(pending.timeoutHandle);
+          }
           pending.reject(new Error('Connection closed'));
         }
         this.pendingRequests.clear();
@@ -190,6 +166,7 @@ export class IPCClient {
       this.socket!.once('close', () => {
         this.socket = null;
         this.connected = false;
+        this.parser.reset();
         resolve();
       });
       this.socket!.destroy();
@@ -265,13 +242,7 @@ export class IPCClient {
    * Handle incoming data from the socket.
    */
   private handleData(data: string): void {
-    this.buffer += data;
-    const lines = this.buffer.split('\n');
-    this.buffer = lines.pop() ?? '';
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-
+    for (const line of this.parser.push(data)) {
       try {
         const response = JSON.parse(line) as JsonRpcResponse;
         this.handleResponse(response);
@@ -285,13 +256,16 @@ export class IPCClient {
    * Handle a JSON-RPC response.
    */
   private handleResponse(response: JsonRpcResponse): void {
-    const pending = this.pendingRequests.get(response.id);
+    const id = response.id as number;
+    const pending = this.pendingRequests.get(id);
     if (!pending) {
       return;
     }
 
-    clearTimeout(pending.timeoutHandle);
-    this.pendingRequests.delete(response.id);
+    if (pending.timeoutHandle) {
+      clearTimeout(pending.timeoutHandle);
+    }
+    this.pendingRequests.delete(id);
 
     if (response.error) {
       pending.reject(new Error(response.error.message));
