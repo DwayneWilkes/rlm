@@ -9,6 +9,10 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { LLMAdapter, LLMRequest, LLMResponse, AnthropicInferenceOptions } from '../../types.js';
+import { type ModelPricing, calculateCost } from '../shared.js';
+
+// Re-export ModelPricing for backwards compatibility
+export type { ModelPricing };
 
 /**
  * Configuration for the Anthropic adapter.
@@ -16,17 +20,6 @@ import type { LLMAdapter, LLMRequest, LLMResponse, AnthropicInferenceOptions } f
 export interface AnthropicConfig {
   /** Anthropic API key (required) */
   apiKey: string;
-}
-
-/**
- * Pricing structure for Anthropic models.
- * Prices are per 1K tokens in dollars.
- */
-export interface ModelPricing {
-  /** Cost per 1K input tokens */
-  input: number;
-  /** Cost per 1K output tokens */
-  output: number;
 }
 
 /**
@@ -196,10 +189,7 @@ export class AnthropicAdapter implements LLMAdapter {
 
     // Calculate cost based on model pricing
     const pricing = ANTHROPIC_PRICING[request.model] ?? DEFAULT_PRICING;
-    const cost =
-      (response.usage.input_tokens * pricing.input +
-        response.usage.output_tokens * pricing.output) /
-      1000;
+    const cost = calculateCost(pricing, response.usage.input_tokens, response.usage.output_tokens);
 
     return {
       content,

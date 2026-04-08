@@ -1,4 +1,4 @@
-import type { REPLConfig, CodeExecution } from '../types/index.js';
+import type { REPLConfig, CodeExecution } from '../types.js';
 import {
   DirectPyodideSandbox,
   WorkerPyodideSandbox,

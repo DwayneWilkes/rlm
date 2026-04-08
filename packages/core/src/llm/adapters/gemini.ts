@@ -9,6 +9,10 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { LLMAdapter, LLMRequest, LLMResponse, GeminiInferenceOptions } from '../../types.js';
+import { type ModelPricing, calculateCost, LLMAPIError } from '../shared.js';
+
+// Re-export ModelPricing for backwards compatibility
+export type { ModelPricing };
 
 /**
  * Configuration for the Gemini adapter.
@@ -16,17 +20,6 @@ import type { LLMAdapter, LLMRequest, LLMResponse, GeminiInferenceOptions } from
 export interface GeminiConfig {
   /** Google AI API key (required) */
   apiKey: string;
-}
-
-/**
- * Pricing structure for Gemini models.
- * Prices are per 1K tokens in dollars.
- */
-export interface ModelPricing {
-  /** Cost per 1K input tokens */
-  input: number;
-  /** Cost per 1K output tokens */
-  output: number;
 }
 
 /**
@@ -118,7 +111,7 @@ export class GeminiAdapter implements LLMAdapter {
 
       // Calculate cost
       const pricing = GEMINI_PRICING[request.model] ?? DEFAULT_PRICING;
-      const cost = (inputTokens * pricing.input + outputTokens * pricing.output) / 1000;
+      const cost = calculateCost(pricing, inputTokens, outputTokens);
 
       return {
         content,

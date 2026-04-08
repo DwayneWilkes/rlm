@@ -12,7 +12,7 @@ import { loadPyodide, type PyodideInterface } from "pyodide";
 import { Worker } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import type { REPLConfig, CodeExecution } from "../types/index.js";
+import type { REPLConfig, CodeExecution } from "../types.js";
 import type { Sandbox, SandboxBridges } from "./sandbox.js";
 import type { WorkerMessage, WorkerResponse } from "./pyodide-worker.js";
 import { PYTHON_SETUP } from "./python-setup.js";

@@ -11,7 +11,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import type { REPLConfig, CodeExecution } from '../types/index.js';
+import type { REPLConfig, CodeExecution } from '../types.js';
 import type { Sandbox, SandboxBridges } from './sandbox.js';
 
 const __filename = fileURLToPath(import.meta.url);

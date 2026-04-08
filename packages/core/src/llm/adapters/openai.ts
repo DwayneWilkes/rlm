@@ -9,6 +9,10 @@
 
 import OpenAI from 'openai';
 import type { LLMAdapter, LLMRequest, LLMResponse, OpenAIInferenceOptions } from '../../types.js';
+import { type ModelPricing, calculateCost } from '../shared.js';
+
+// Re-export ModelPricing for backwards compatibility
+export type { ModelPricing };
 
 /**
  * Configuration for the OpenAI adapter.
@@ -16,17 +20,6 @@ import type { LLMAdapter, LLMRequest, LLMResponse, OpenAIInferenceOptions } from
 export interface OpenAIConfig {
   /** OpenAI API key (required) */
   apiKey: string;
-}
-
-/**
- * Pricing structure for OpenAI models.
- * Prices are per 1K tokens in dollars.
- */
-export interface ModelPricing {
-  /** Cost per 1K input tokens */
-  input: number;
-  /** Cost per 1K output tokens */
-  output: number;
 }
 
 /**
@@ -108,8 +101,7 @@ export class OpenAIAdapter implements LLMAdapter {
 
     // Calculate cost based on model pricing
     const pricing = OPENAI_PRICING[request.model] ?? DEFAULT_PRICING;
-    const cost =
-      (promptTokens * pricing.input + completionTokens * pricing.output) / 1000;
+    const cost = calculateCost(pricing, promptTokens, completionTokens);
 
     return {
       content,
